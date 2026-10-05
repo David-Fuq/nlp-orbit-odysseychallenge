@@ -51,7 +51,7 @@ export default function Step3Translate() {
         value={state.student_commands_1}
         onChange={(v) => setField("student_commands_1", v)}
         rows={6}
-        placeholder={"STRAIGHT 30\nTURN LEFT"}
+        placeholder={REFERENCE_COMMANDS.trim()}
       />
 
       <details className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3">
