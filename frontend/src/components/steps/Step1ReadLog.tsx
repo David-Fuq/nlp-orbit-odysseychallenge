@@ -14,8 +14,8 @@ export default function Step1ReadLog() {
         <p className="mt-2 text-slate-600 dark:text-slate-400">
           Mission Control has sent a <strong>lunar mission log</strong> written in casual
           astronaut language. Your robot only understands simple commands like{" "}
-          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 font-mono text-sm">MOVE 2</code> or{" "}
-          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 font-mono text-sm">TURN 90</code>.
+          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 font-mono text-sm">STRAIGHT 40</code> or{" "}
+          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 font-mono text-sm">TURN LEFT</code>.
         </p>
       </header>
 
