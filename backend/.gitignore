@@ -1,0 +1,15 @@
+# Virtualenv
+.venv/
+venv/
+
+# Bytecode
+__pycache__/
+*.py[cod]
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local environment overrides
+.env
