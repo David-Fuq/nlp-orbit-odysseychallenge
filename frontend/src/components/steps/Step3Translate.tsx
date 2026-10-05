@@ -47,11 +47,11 @@ export default function Step3Translate() {
 
       <TextAreaField
         label="Your Command List"
-        caption="Write each command on its own line, e.g. MOVE 2 or TURN 90"
+        caption="Write each command on its own line, e.g. STRAIGHT 40 or TURN RIGHT"
         value={state.student_commands_1}
         onChange={(v) => setField("student_commands_1", v)}
         rows={6}
-        placeholder={"MOVE 2\nTURN 90"}
+        placeholder={REFERENCE_COMMANDS.trim()}
       />
 
       <details className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3">
