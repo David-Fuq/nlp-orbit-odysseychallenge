@@ -1,0 +1,15 @@
+# Orbit Odyssey NLP backend — PR-02 scaffold.
+#
+# Deliberately minimal. Do NOT add torch here (PR-04 adds it, CPU-only wheel),
+# and never sqlalchemy / python-jose / passlib: this service has no auth, no
+# database and no job queue. See pr-based-plan/README.md "Locked decisions".
+fastapi
+uvicorn[standard]
+pydantic-settings
+
+# Test stack. httpx is required by fastapi.testclient.TestClient; websockets
+# backs uvicorn's WS support and TestClient's websocket_connect().
+pytest
+pytest-asyncio
+httpx
+websockets
