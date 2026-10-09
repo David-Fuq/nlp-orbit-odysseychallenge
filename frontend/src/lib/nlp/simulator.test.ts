@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { comparePaths, simulatePath } from "./simulator";
-import { NEW_REFERENCE_COMMANDS, REFERENCE_COMMANDS } from "./data";
+import { REFERENCE_COMMANDS } from "./data";
+import { HELD_OUT_REFERENCE_COMMANDS } from "./heldOutTestLog";
 
 describe("simulatePath", () => {
   // Anchor for the new grammar: from the origin facing 90 degrees, a forward
@@ -49,14 +50,15 @@ describe("simulatePath", () => {
     expect(lower.heading).toBe(upper.heading);
   });
 
-  it("runs a mixed multi-line program (the new reference log)", () => {
-    // STRAIGHT 60 -> (0,60) h90; TURN 180 -> h270; STRAIGHT 15 -> (0,45);
-    // BACKWARDS 30 -> (0,75); TURN LEFT -> h0.
-    const { x, y, heading, lines } = simulatePath(NEW_REFERENCE_COMMANDS);
-    expect(x).toBeCloseTo(0, 10);
-    expect(y).toBeCloseTo(75, 10);
-    expect(heading).toBe(0);
-    expect(lines).toHaveLength(5);
+  it("runs a mixed multi-line program (the held-out reference)", () => {
+    // STRAIGHT 7 -> (0,7) h90; TURN RIGHT -> h0; STRAIGHT 38 -> (38,7);
+    // TURN 180 -> h180 (west); BACKWARDS 143 -> back east to (181,7);
+    // TURN LEFT -> h270 (south); STRAIGHT 64 -> (181,-57).
+    const { x, y, heading, lines } = simulatePath(HELD_OUT_REFERENCE_COMMANDS);
+    expect(x).toBeCloseTo(181, 10);
+    expect(y).toBeCloseTo(-57, 10);
+    expect(heading).toBe(270);
+    expect(lines).toHaveLength(7);
   });
 
   it("normalizes negative headings with non-negative modulo", () => {

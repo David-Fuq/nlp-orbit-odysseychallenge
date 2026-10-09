@@ -36,6 +36,9 @@ describe("restoreMissionState", () => {
     expect(state).not.toHaveProperty("turn_synonyms");
     expect(state).not.toHaveProperty("left_synonyms");
     expect(state).not.toHaveProperty("right_synonyms");
+    // Old-log Step 6 fields, removed in PR-10.
+    expect(state).not.toHaveProperty("student_new_commands");
+    expect(state).not.toHaveProperty("llm_commands_new");
   });
 
   it("gives a pre-PR-08 blob the Step 4 defaults", () => {
@@ -106,7 +109,20 @@ describe("restoreMissionState", () => {
     const blob = { job_id: ID, model_trained: true, student_new_commands: "STRAIGHT 60" };
     const { state } = restoreMissionState(blob, DEFAULTS, newId);
     expect(state.predicted_new_commands).toEqual([]);
-    expect(state.student_new_commands).toBe("STRAIGHT 60");
+    expect(state).not.toHaveProperty("student_new_commands");
+  });
+
+  it("drops a pre-PR-10 blob's old-log Step 6 answers", () => {
+    const blob = { job_id: ID, student_new_commands: "STRAIGHT 60", llm_commands_new: "STRAIGHT 60\nTURN 180" };
+    const { state } = restoreMissionState(blob, DEFAULTS, newId);
+    expect(state).not.toHaveProperty("student_new_commands");
+    expect(state).not.toHaveProperty("llm_commands_new");
+    expect(state.llm_commands_held_out).toBe("");
+  });
+
+  it("restores the pasted LLM answer for the held-out log", () => {
+    const { state } = restoreMissionState({ job_id: ID, llm_commands_held_out: "STRAIGHT 7" }, DEFAULTS, newId);
+    expect(state.llm_commands_held_out).toBe("STRAIGHT 7");
   });
 
   it("restores valid predictions as a copy", () => {

@@ -20,9 +20,11 @@ export interface MissionState {
   labeled_examples: TrainingExample[];
   mission_log_1: string;
   student_commands_1: string;
-  /** Hand-typed commands for Step 6's old log; PR-10 switches Step 6 to predicted_new_commands. */
-  student_new_commands: string;
-  llm_commands_new: string;
+  /**
+   * Step 6: the LLM's answer for the held-out log, pasted by the student.
+   * Replaces `llm_commands_new` (answers for the old log), which is dropped.
+   */
+  llm_commands_held_out: string;
   /** Step 4: epochs for the next run, EPOCHS_MIN..EPOCHS_MAX. */
   epochs: number;
   learning_rate_preset: LearningRatePreset;
@@ -39,8 +41,7 @@ export const DEFAULTS: MissionState = {
   labeled_examples: [...BASE_EXAMPLES],
   mission_log_1: SAMPLE_MISSION_LOG,
   student_commands_1: "",
-  student_new_commands: "",
-  llm_commands_new: "",
+  llm_commands_held_out: "",
   epochs: DEFAULT_EPOCHS,
   learning_rate_preset: DEFAULT_PRESET,
   training_history: [],
@@ -51,8 +52,7 @@ export const DEFAULTS: MissionState = {
 const STRING_FIELDS = [
   "mission_log_1",
   "student_commands_1",
-  "student_new_commands",
-  "llm_commands_new",
+  "llm_commands_held_out",
 ] as const satisfies readonly (keyof MissionState)[];
 
 function isEpochMetric(value: unknown): value is EpochMetric {

@@ -4,15 +4,12 @@
 // mark each prediction against the ground truth, and let them teach it a
 // sentence it got wrong and retrain without leaving the step.
 //
-// Predictions are re-fetched once per mount and after every completed retrain:
-// the stored ones may come from a model the student has since retrained in
-// Step 4. Every predict call takes a request number, and only the latest
-// request may write its result.
+// Predictions come from useHeldOutPredictions: re-fetched once per mount and
+// after every completed retrain.
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useMission } from "@/state/MissionContext";
-import { getModelStatus, NotTrainedError, predict, type Prediction } from "@/lib/nlp/api";
 import { API_BASE_URL } from "@/lib/nlp/config";
 import {
   AMOUNT_TOLERANCE_CM,
@@ -21,18 +18,16 @@ import {
   isPredictionCorrect,
   planTeach,
 } from "@/lib/nlp/grading";
-import { HELD_OUT_EXAMPLES, HELD_OUT_MISSION_LOG } from "@/lib/nlp/heldOutTestLog";
+import { HELD_OUT_EXAMPLES, HELD_OUT_MISSION_LOG, HELD_OUT_REFERENCE_COMMANDS } from "@/lib/nlp/heldOutTestLog";
 import { PRESET_LABELS } from "@/lib/nlp/hyperparams";
 import { INTENT_LABELS, sameSentence } from "@/lib/nlp/intents";
 import { comparePaths } from "@/lib/nlp/simulator";
+import { useHeldOutPredictions } from "@/lib/nlp/useHeldOutPredictions";
 import { useTrainingRun } from "@/lib/nlp/useTrainingRun";
 import Callout from "@/components/ui/Callout";
 import CodeBlock from "@/components/ui/CodeBlock";
 import DistanceResult from "@/components/ui/DistanceResult";
 import TrainingChart from "@/components/ui/TrainingChart";
-
-const SENTENCES = HELD_OUT_EXAMPLES.map((e) => e.sentence);
-const REFERENCE_COMMANDS = HELD_OUT_EXAMPLES.map(exampleCommand).join("\n");
 
 const CARD = "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900";
 const CELL = "px-3 py-2 align-top";
@@ -41,94 +36,12 @@ const BUTTON =
 const SMALL_BUTTON =
   "rounded-md border border-sky-600 px-2.5 py-1 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-500 dark:text-sky-300 dark:hover:bg-slate-800";
 
-// loading: a status check or predict call is in flight (also the initial state,
-// so the mount effect never has to set state synchronously).
-type Phase = "loading" | "ready" | "needs-training" | "unreachable";
-
-/** The stored predictions, if they line up one-to-one with the held-out log. */
-function alignedPredictions(stored: readonly Prediction[]): readonly Prediction[] | null {
-  if (stored.length !== HELD_OUT_EXAMPLES.length) return null;
-  const aligned = stored.every((p, i) => sameSentence(p.sentence, HELD_OUT_EXAMPLES[i].sentence));
-  return aligned ? stored : null;
-}
-
 export default function Step5TestIterate() {
   const { state, setField } = useMission();
   const jobId = state.job_id;
-  const [phase, setPhase] = useState<Phase>("loading");
   const [teachNote, setTeachNote] = useState<{ index: number; text: string } | null>(null);
-
-  // Bumped by every predict call and by unmount; a response for an older
-  // number is dropped, so a slow request can't overwrite a newer one.
-  const requestIdRef = useRef(0);
-
-  useEffect(
-    () => () => {
-      requestIdRef.current += 1;
-    },
-    [],
-  );
-
-  const refreshPredictions = (id: string) => {
-    const requestId = ++requestIdRef.current;
-    setPhase("loading");
-    predict(id, SENTENCES).then(
-      (predictions) => {
-        if (requestId !== requestIdRef.current) return;
-        setField("predicted_new_commands", predictions);
-        setPhase("ready");
-      },
-      (err: unknown) => {
-        if (requestId !== requestIdRef.current) return;
-        if (err instanceof NotTrainedError) {
-          // The backend lost the model (e.g. it restarted): recoverable, not an error.
-          setField("model_trained", false);
-          setPhase("needs-training");
-        } else {
-          // Server unreachable: model_trained is left as it was.
-          setPhase("unreachable");
-        }
-      },
-    );
-  };
-
-  const { isTraining, error, train } = useTrainingRun({ onCompleted: () => refreshPredictions(jobId) });
-
-  // Mount check. A trained model goes straight to predict; otherwise ask the
-  // backend first, since the flag may only be stale (refresh, missed
-  // `completed`), and never call predict just to collect a 404.
-  const checkModel = useEffectEvent((id: string, isCancelled: () => boolean) => {
-    if (state.model_trained) {
-      refreshPredictions(id);
-      return;
-    }
-    getModelStatus(id).then(
-      (trained) => {
-        if (isCancelled()) return;
-        if (trained) {
-          setField("model_trained", true);
-          refreshPredictions(id);
-        } else {
-          setPhase("needs-training");
-        }
-      },
-      () => {
-        if (!isCancelled()) setPhase("unreachable");
-      },
-    );
-  });
-
-  useEffect(() => {
-    if (!jobId) return;
-    let cancelled = false;
-    // Deferred a tick: Strict Mode's simulated unmount clears the timer, so
-    // even in development a mount sends one request, not two.
-    const timer = setTimeout(() => checkModel(jobId, () => cancelled), 0);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [jobId]);
+  const { phase, predictions, refresh } = useHeldOutPredictions();
+  const { isTraining, error, train } = useTrainingRun({ onCompleted: refresh });
 
   const teach = (index: number) => {
     const truth = HELD_OUT_EXAMPLES[index];
@@ -147,12 +60,11 @@ export default function Step5TestIterate() {
     });
   };
 
-  const predictions = phase === "needs-training" ? null : alignedPredictions(state.predicted_new_commands);
   const marks = predictions ? HELD_OUT_EXAMPLES.map((truth, i) => isPredictionCorrect(truth, predictions[i])) : [];
   const correctCount = marks.filter(Boolean).length;
   const refreshing = phase === "loading" && predictions !== null;
   const pathResult = predictions
-    ? comparePaths(predictions.map((p) => p.command).join("\n"), REFERENCE_COMMANDS)
+    ? comparePaths(predictions.map((p) => p.command).join("\n"), HELD_OUT_REFERENCE_COMMANDS)
     : null;
   const retrainDisabled = isTraining || !jobId || phase === "loading";
 
@@ -192,7 +104,7 @@ export default function Step5TestIterate() {
           {predictions ? <p>The predictions below are from your last successful run and may be out of date.</p> : null}
           <button
             type="button"
-            onClick={() => refreshPredictions(jobId)}
+            onClick={refresh}
             disabled={!jobId}
             className="mt-2 font-medium underline disabled:opacity-60"
           >
@@ -338,6 +250,7 @@ export default function Step5TestIterate() {
           </p>
           <DistanceResult
             result={pathResult}
+            studentLabel="Your model's commands"
             bands={HELD_OUT_PATH_BANDS}
             messages={{
               success: (d) => `Excellent! Your model's path ends ${d} cm from the reference.`,
