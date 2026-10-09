@@ -5,10 +5,13 @@ from __future__ import annotations
 import uuid
 
 import pytest
+import torch
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import registry
+from app.services.corpus import load_base_corpus
+from app.services.model import train_model
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +49,9 @@ def test_predict_404s_for_untrained_job() -> None:
 
 def test_predict_returns_contract_shape_for_trained_job() -> None:
     job_id = str(uuid.uuid4())
-    registry.set_model(job_id, True)
+    # A real TrainedModel (PR-05 replaced the PR-02 ``True`` sentinel).
+    torch.manual_seed(0)
+    registry.set_model(job_id, train_model(load_base_corpus(), 50, 0.05))
     with TestClient(app) as client:
         response = client.post(
             "/api/predict",

@@ -8,17 +8,18 @@ A module-level singleton dict, mirroring the CV app's module-level
 persistence: restarting the backend invalidates every ``job_id``, which is
 exactly the case ``GET /api/model/{job_id}`` exists to detect.
 
-In PR-02 the stored value is a sentinel (``True``) written by the fake trainer,
-so ``POST /api/predict``'s 404 logic has something real to check. PR-05 stores
-the actual trained model object in the same slot; the accessor signatures below
-do not change.
+The stored value is the ``app.services.model.TrainedModel`` that
+``train_model`` returns (``.model`` + ``.tokenizer``), written by
+``app.routers.train`` only after a run succeeds. (PR-02 stored the sentinel
+``True`` here; the accessor signatures did not change.) Values stay typed
+``Any`` so this module does not import torch.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# job_id -> trained model object (PR-02: the sentinel ``True``).
+# job_id -> app.services.model.TrainedModel.
 _models: dict[str, Any] = {}
 
 

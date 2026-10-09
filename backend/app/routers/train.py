@@ -3,10 +3,23 @@ app.routers.train
 -----------------
 The HTTP API: health, training kickoff, prediction, and model status.
 
-PR-02 scope: training is a **fake trainer** that sleeps and emits the real
-WebSocket message protocol, and ``POST /api/predict`` returns a hardcoded
-prediction. Both bodies are replaced in PR-05; the request/response schemas in
-``app.schemas`` and the endpoint signatures are already final.
+``POST /api/train`` trains PR-04's real model (``app.services.model``) in a
+worker thread and streams the WebSocket message protocol from it;
+``POST /api/predict`` runs real inference against the model stored for the
+``job_id``. The request/response schemas in ``app.schemas`` and the endpoint
+signatures are unchanged from PR-02.
+
+Threading (PR-05):
+
+- ``train_model`` is synchronous PyTorch, so it runs in ``asyncio.to_thread``,
+  never on the event loop.
+- ``on_epoch_end`` fires in that worker thread. It hands each message to the
+  loop with ``run_coroutine_threadsafe`` and **blocks on ``.result()``** until
+  the send finishes. Without that, every broadcast would be an independent
+  task and nothing would guarantee epoch N's messages go out before epoch
+  N+1's, or before ``completed``.
+- The registry is written on the event loop after ``to_thread`` returns, and
+  before ``completed`` is broadcast. A failed run writes nothing.
 """
 
 from __future__ import annotations
@@ -25,16 +38,23 @@ from app.schemas import (
     PredictResponse,
     TrainRequest,
 )
+from app.schemas import TrainingExample as WireExample
 from app.services import registry
+from app.services.corpus import NUMERIC_INTENTS, load_base_corpus
+from app.services.corpus import TrainingExample as CorpusExample
+from app.services.model import TrainedModel, train_model
+# Aliased: the ``predict`` endpoint below already owns that name.
+from app.services.model import predict as predict_sentence
 from app.ws.progress import manager
 
 logger = logging.getLogger("orbit.api")
 
 router = APIRouter(prefix="/api")
 
-# ── Fake-trainer tuning (PR-02 only; PR-05 deletes this) ────────────────
-FAKE_EPOCHS = 5
-FAKE_EPOCH_DELAY_SECONDS = 0.3
+#: How long the training thread waits for one WS broadcast to finish before
+#: giving up (which fails the run). Sends take microseconds; this only bounds
+#: a wedged event loop.
+BROADCAST_TIMEOUT_SECONDS = 10.0
 
 # ``asyncio.create_task`` only holds a weak reference to its task, so a
 # fire-and-forget task can be garbage-collected mid-flight. Keep a strong
@@ -49,44 +69,91 @@ def _spawn(coro: Any) -> None:
     task.add_done_callback(_background_tasks.discard)
 
 
-async def _fake_training_run(job_id: str) -> None:
-    """Simulate a training run, emitting the real message protocol.
+def _to_corpus_examples(wire: list[WireExample]) -> list[CorpusExample]:
+    """Convert the HTTP wire examples to the dataclass ``train_model`` takes.
 
-    PR-05 replaces this entire function with a real PyTorch training loop
-    driven from a worker thread. The message types, their payload shapes and
-    their order are the contract and do not change.
+    The schema parses ``amount_cm`` as optional for every intent; this is where
+    "required iff STRAIGHT/BACKWARDS" is enforced. ``train_model`` would
+    silently read a missing distance as 0 cm, so a mismatch raises
+    ``ValueError`` instead, which the training task reports as ``failed``.
     """
+    examples: list[CorpusExample] = []
+    for index, item in enumerate(wire):
+        numeric = item.intent in NUMERIC_INTENTS
+        if numeric and item.amount_cm is None:
+            raise ValueError(
+                f"corpus[{index}] ({item.sentence!r}): {item.intent} examples "
+                "require amount_cm"
+            )
+        if not numeric and item.amount_cm is not None:
+            raise ValueError(
+                f"corpus[{index}] ({item.sentence!r}): {item.intent} examples "
+                f"must not carry amount_cm (got {item.amount_cm})"
+            )
+        examples.append(CorpusExample(item.sentence, item.intent, item.amount_cm))
+    return examples
+
+
+async def _training_run(request: TrainRequest) -> None:
+    """Train a real model for ``request.job_id``, streaming the WS protocol.
+
+    Message order: ``log`` ("Training started"), an optional ``log`` about the
+    default corpus, one ``progress`` + ``metrics`` pair per epoch, then
+    ``completed`` -- or ``failed`` at any point. Never raises.
+    """
+    job_id = request.job_id
     try:
+        loop = asyncio.get_running_loop()
         await manager.broadcast(job_id, {"type": "log", "message": "Training started"})
 
-        for epoch in range(1, FAKE_EPOCHS + 1):
-            await asyncio.sleep(FAKE_EPOCH_DELAY_SECONDS)
-            await manager.broadcast(
-                job_id, {"type": "progress", "progress": epoch / FAKE_EPOCHS}
-            )
+        if request.corpus:
+            corpus = _to_corpus_examples(request.corpus)
+        else:
+            corpus = load_base_corpus()
             await manager.broadcast(
                 job_id,
                 {
-                    "type": "metrics",
-                    "metrics": {
-                        "epoch": epoch,
-                        # Fake curves: losses decay, accuracy climbs.
-                        "intent_loss": round(1.6 * (0.6**epoch), 4),
-                        "amount_loss": round(0.9 * (0.65**epoch), 4),
-                        "intent_accuracy": round(1.0 - 0.8 * (0.55**epoch), 4),
-                    },
+                    "type": "log",
+                    "message": (
+                        "No corpus supplied; training on the default base "
+                        f"corpus ({len(corpus)} examples)"
+                    ),
                 },
             )
 
-        # Mark the job trained *before* announcing completion, so a client that
+        def send_from_worker(message: dict[str, Any]) -> None:
+            # Called from the training thread. Blocking until the send is done
+            # keeps every message in order (see module docstring).
+            asyncio.run_coroutine_threadsafe(
+                manager.broadcast(job_id, message), loop
+            ).result(timeout=BROADCAST_TIMEOUT_SECONDS)
+
+        def on_epoch_end(metrics: dict[str, Any]) -> None:
+            send_from_worker(
+                {"type": "progress", "progress": metrics["epoch"] / request.epochs}
+            )
+            send_from_worker({"type": "metrics", "metrics": metrics})
+
+        trained: TrainedModel = await asyncio.to_thread(
+            train_model,
+            corpus,
+            request.epochs,
+            request.learning_rate,
+            on_epoch_end=on_epoch_end,
+        )
+
+        # Store the model *before* announcing completion, so a client that
         # reacts to ``completed`` by calling /api/predict cannot race the
         # registry write.
-        registry.set_model(job_id, True)
+        registry.set_model(job_id, trained)
         await manager.broadcast(
             job_id, {"type": "completed", "message": "Training complete"}
         )
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.exception("Fake training failed for job %s", job_id)
+        logger.info("Training complete for job %s", job_id)
+    except Exception as exc:
+        # Nothing is written to the registry, so a previous successful model
+        # for this job_id (if any) stays in place.
+        logger.exception("Training failed for job %s", job_id)
         await manager.broadcast(job_id, {"type": "failed", "message": str(exc)})
 
 
@@ -109,8 +176,9 @@ async def train(request: TrainRequest) -> dict[str, str]:
     README's connection-order contract); nothing is buffered for a client that
     is not connected yet.
 
-    PR-02 validates ``corpus``/``epochs``/``learning_rate`` through the schema
-    but ignores their content.
+    An empty ``corpus`` trains on the committed default corpus
+    (``corpus.load_base_corpus()``). Invalid examples are reported as a
+    ``failed`` WS message, not as an HTTP error.
     """
     logger.info(
         "Training requested for job %s (%d examples, %d epochs, lr=%s)",
@@ -119,7 +187,7 @@ async def train(request: TrainRequest) -> dict[str, str]:
         request.epochs,
         request.learning_rate,
     )
-    _spawn(_fake_training_run(request.job_id))
+    _spawn(_training_run(request))
     return {"job_id": request.job_id, "status": "accepted"}
 
 
@@ -143,8 +211,9 @@ async def predict(request: PredictRequest) -> PredictResponse:
     there is no useful response body to return, and the caller is expected to
     have checked the status endpoint first.
 
-    PR-02 returns a hardcoded prediction for every sentence. PR-05 replaces the
-    body below with real inference and leaves the schema alone.
+    Inference runs directly on the event loop: it is a few milliseconds of CPU
+    per sentence with no I/O, and a request carries one student's sentence
+    list, so a thread hop would cost more than it saves at this scale.
     """
     if not registry.has_model(request.job_id):
         raise HTTPException(
@@ -152,12 +221,11 @@ async def predict(request: PredictRequest) -> PredictResponse:
             detail=f"No trained model for job_id {request.job_id!r}",
         )
 
+    trained: TrainedModel = registry.get_model(request.job_id)
     predictions = [
         PredictionItem(
             sentence=sentence,
-            intent="STRAIGHT",
-            amount_cm=10.0,
-            command="STRAIGHT 10",
+            **predict_sentence(trained.model, trained.tokenizer, sentence),
         )
         for sentence in request.sentences
     ]

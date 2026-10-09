@@ -5,11 +5,10 @@ classification + numeric slot regression) for the Orbit Odyssey NLP
 challenge. One model per browser tab, keyed by a client-generated `job_id`,
 held **in memory only** — restarting this process invalidates every `job_id`.
 
-The endpoints still run PR-02's **fake trainer**: it sleeps and emits the real
-WebSocket message protocol. The real model (PR-04) lives in
-`app/services/tokenizer.py` and `app/services/model.py` but is **not wired to
-any endpoint yet** — PR-05 swaps it in without changing any endpoint or
-schema. See "Model interface" below.
+`POST /api/train` trains the real PyTorch model (PR-04's
+`app/services/model.py`) and streams its per-epoch metrics over the WebSocket;
+`POST /api/predict` runs real inference against the model stored for that
+`job_id` (wired in PR-05). See "Training run" and "Model interface" below.
 
 ## Setup
 
@@ -85,6 +84,45 @@ buffered for a client that is not connected yet, and this toy model trains
 fast enough to finish before a still-`CONNECTING` socket opens.
 `GET /api/model/{job_id}` is the recovery path for a missed `completed`
 message.
+
+### Training run
+
+What one `POST /api/train` produces on the job's socket, in this order:
+
+1. `log` — `"Training started"` (always first).
+2. `log` — only when the request's `corpus` is **empty**: the run falls back to
+   the committed, human-reviewed `app/services/data/base_corpus.json`
+   (`corpus.load_base_corpus()`), *not* a fresh `generate_corpus()`, so hand
+   edits to that file are what gets trained on. The message names the example
+   count.
+3. One `progress` (`epoch / epochs`) then one `metrics` per epoch. The metrics
+   dict is `train_model`'s callback payload forwarded unchanged.
+4. `completed` — sent only after the model is in the registry.
+
+Any error ends the stream with `failed` (`message` = the exception text)
+instead of `completed`, and the server stays up. That includes the corpus
+check below and anything raised mid-training. A failed run writes nothing to
+the registry, so a brand-new `job_id` stays `trained: false` and
+`/api/predict` stays `404`. If the job already had a model from an earlier
+successful run, that model is kept.
+
+**Corpus validation.** The schema leaves `amount_cm` optional for every
+intent, so the router enforces the real rule while converting the wire
+examples to `corpus.TrainingExample`: a `STRAIGHT`/`BACKWARDS` example without
+`amount_cm`, or a turn example with one, fails the run. This happens inside
+the background task, so `/api/train` still answers `202` and the error arrives
+as `failed`.
+
+**Threads.** `train_model` runs in `asyncio.to_thread`. Its `on_epoch_end`
+callback hands each message to the event loop with
+`run_coroutine_threadsafe(...)` and blocks on `.result()`, which keeps every
+message in order. The registry write and `completed` both happen back on the
+loop. There is no artificial pacing, so a run takes well under a second and
+the whole curve usually arrives at once. `/api/predict` runs inference on the
+loop, at a few ms per sentence.
+
+`learning_rate` and `epochs` reach `train_model` exactly as sent. Training is
+not seeded in production, so two runs on the same corpus differ slightly.
 
 ## Model interface (PR-04, for PR-05)
 
