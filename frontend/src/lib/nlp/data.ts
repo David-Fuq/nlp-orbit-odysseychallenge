@@ -6,10 +6,10 @@
 // match the prototype's.
 
 // NOTE: the mission-log prose below is placeholder-quality and wants an
-// editorial pass. Whenever it changes, the matching *_REFERENCE_COMMANDS
-// must change with it — those command lists are the ground truth the path
-// grader compares student output against, so prose and commands drifting
-// apart is a real bug, not a copy nit.
+// editorial pass. Whenever it changes, REFERENCE_COMMANDS must change with
+// it — that command list is the ground truth for this log, so prose and
+// commands drifting apart is a real bug, not a copy nit. (The held-out test
+// log for Steps 5 and 6 lives in heldOutTestLog.ts.)
 
 export const SAMPLE_MISSION_LOG = `From your current position, roll straight ahead 40 centimeters
 until you are just past the first crater. Then rotate 90 degrees to
@@ -21,20 +21,10 @@ TURN RIGHT
 STRAIGHT 25
 `;
 
-export const NEW_MISSION_LOG = `Roll straight ahead 60 centimeters until you reach the edge of the
-ridge. Spin 180 degrees so you are facing the lander again, then
-drive straight on 15 centimeters to clear the loose gravel. Back up
-30 centimeters to give the sample tray some room, and finish with a
-90 degree turn to your left so your antenna points at the relay dish.`;
-
-export const NEW_REFERENCE_COMMANDS = `STRAIGHT 60
-TURN 180
-STRAIGHT 15
-BACKWARDS 30
-TURN LEFT
-`;
-
 // Builds the suggested LLM prompt for Step 6 (already includes the log).
+// Step 6 passes HELD_OUT_MISSION_LOG, whose turns name a direction or a
+// half turn ("pivot to the right", "swap ends", "haul around to the left")
+// rather than an angle, and one of whose sentences only says to wait.
 export function buildLlmPrompt(missionLog: string): string {
   return `You are helping students translate a lunar mission log into simple robot commands for a small classroom robot.
 
@@ -52,6 +42,10 @@ Rules:
   "TURN -45": a 90 degree turn is TURN RIGHT or TURN LEFT, and a half turn
   is TURN 180. For any other angle described in the log, pick the closest of
   those three.
+- A turn that names only a direction ("to the left", "to the right") is
+  TURN LEFT or TURN RIGHT, whatever verb the log uses. Turning around to face
+  the opposite way is TURN 180.
+- Waiting or holding position is not a command: write nothing for it.
 - STRAIGHT and BACKWARDS always take a whole number of centimeters. If the
   log describes a distance vaguely or in some other unit, choose a
   reasonable whole centimeter value between 5 and 150.

@@ -7,7 +7,7 @@ import {
   isPredictionCorrect,
   planTeach,
 } from "./grading";
-import { HELD_OUT_EXAMPLES } from "./heldOutTestLog";
+import { HELD_OUT_EXAMPLES, HELD_OUT_REFERENCE_COMMANDS } from "./heldOutTestLog";
 import { comparePaths } from "./simulator";
 
 const straight40: TrainingExample = { sentence: "roll ahead 40 cm", intent: "STRAIGHT", amount_cm: 40 };
@@ -51,7 +51,8 @@ describe("exampleCommand", () => {
 });
 
 describe("HELD_OUT_PATH_BANDS", () => {
-  const reference = HELD_OUT_EXAMPLES.map(exampleCommand).join("\n");
+  const reference = HELD_OUT_REFERENCE_COMMANDS;
+  const lines = (...commands: string[]) => commands.join("\n");
 
   it("never grades an all-correct held-out run as a warning", () => {
     // Every amount off by the full tolerance, in every combination of signs.
@@ -75,6 +76,36 @@ describe("HELD_OUT_PATH_BANDS", () => {
     expect(comparePaths(reference, reference).distance).toBeLessThan(HELD_OUT_PATH_BANDS.success);
     const wrongTurn = reference.replace("TURN RIGHT", "TURN LEFT");
     expect(comparePaths(wrongTurn, reference).distance).toBeGreaterThanOrEqual(HELD_OUT_PATH_BANDS.info);
+  });
+
+  // Step 6's two comparisons. The reference ends at (181, -57); see the trace
+  // in simulator.test.ts.
+  it("grades a model-style answer with a missed half turn as a warning", () => {
+    // "swap ends" read as TURN LEFT, amounts well off: (0,12) h0 -> (40,12)
+    // h90 -> BACKWARDS 100 to (40,-88) h180 -> (-10,-88).
+    const model = lines("STRAIGHT 12", "TURN RIGHT", "STRAIGHT 40", "TURN LEFT", "BACKWARDS 100", "TURN LEFT", "STRAIGHT 50");
+    const { distance } = comparePaths(model, reference);
+    expect(distance).toBeCloseTo(Math.sqrt(191 ** 2 + 31 ** 2), 10); // ≈ 193.50
+    expect(distance).toBeGreaterThanOrEqual(HELD_OUT_PATH_BANDS.info);
+  });
+
+  it("grades an LLM-style answer with every amount a few cm off as info", () => {
+    // 7->10, 38->40, 143->140, 64->60, each within AMOUNT_TOLERANCE_CM, so every
+    // sentence is still marked correct: ends at (180,-50).
+    const llm = lines("STRAIGHT 10", "TURN RIGHT", "STRAIGHT 40", "TURN 180", "BACKWARDS 140", "TURN LEFT", "STRAIGHT 60");
+    const { distance } = comparePaths(llm, reference);
+    expect(distance).toBeCloseTo(Math.sqrt(50), 10); // ≈ 7.07
+    expect(distance).toBeGreaterThanOrEqual(HELD_OUT_PATH_BANDS.success);
+    expect(distance).toBeLessThan(HELD_OUT_PATH_BANDS.info);
+  });
+
+  it("grades an LLM-style answer that turns the wrong way at the end as a warning", () => {
+    // "haul around to the left" read as TURN RIGHT: the last 64 cm go north
+    // instead of south, ending at (181,71), 2 * 64 cm away.
+    const llm = reference.replace("TURN LEFT", "TURN RIGHT");
+    const { distance } = comparePaths(llm, reference);
+    expect(distance).toBeCloseTo(128, 10);
+    expect(distance).toBeGreaterThanOrEqual(HELD_OUT_PATH_BANDS.info);
   });
 });
 
