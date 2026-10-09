@@ -10,46 +10,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  DEFAULT_ACTIONS,
-  DEFAULT_AMOUNTS,
-  DEFAULT_LANDMARKS,
-  DEFAULT_LEFT_SYNONYMS,
-  DEFAULT_MOVE_SYNONYMS,
-  DEFAULT_RIGHT_SYNONYMS,
-  DEFAULT_TURN_SYNONYMS,
-  SAMPLE_MISSION_LOG,
-} from "@/lib/nlp/data";
+import { DEFAULTS, restoreMissionState, type MissionState } from "./missionStorage";
 
-export interface MissionState {
-  mission_log_1: string;
-  actions_list: string;
-  amounts_list: string;
-  landmarks_list: string;
-  student_commands_1: string;
-  move_synonyms: string;
-  turn_synonyms: string;
-  left_synonyms: string;
-  right_synonyms: string;
-  student_dict_notes: string;
-  student_new_commands: string;
-  llm_commands_new: string;
-}
-
-const DEFAULTS: MissionState = {
-  mission_log_1: SAMPLE_MISSION_LOG,
-  actions_list: DEFAULT_ACTIONS,
-  amounts_list: DEFAULT_AMOUNTS,
-  landmarks_list: DEFAULT_LANDMARKS,
-  student_commands_1: "",
-  move_synonyms: DEFAULT_MOVE_SYNONYMS,
-  turn_synonyms: DEFAULT_TURN_SYNONYMS,
-  left_synonyms: DEFAULT_LEFT_SYNONYMS,
-  right_synonyms: DEFAULT_RIGHT_SYNONYMS,
-  student_dict_notes: "",
-  student_new_commands: "",
-  llm_commands_new: "",
-};
+export type { MissionState } from "./missionStorage";
 
 const STORAGE_KEY = "orbit-odyssey-mission";
 
@@ -66,21 +29,33 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
 
   // Load persisted state once, after the initial (deterministic) render so
-  // server and client markup match.
+  // server and client markup match. This is also the only place job_id is
+  // generated: never during render or SSR.
   useEffect(() => {
+    let stored: unknown = null;
     try {
       const raw = sessionStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<MissionState>;
-        // Intentional: sessionStorage can't be read during render without a
-        // server/client hydration mismatch, so this one-time post-mount sync
-        // is the point of the effect, not a cascading-render accident.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setState((prev) => ({ ...prev, ...parsed }));
-      }
+      if (raw) stored = JSON.parse(raw);
     } catch {
-      // sessionStorage may be unavailable (private mode, SSR) — ignore.
+      // sessionStorage may be unavailable (private mode, SSR) or hold bad JSON — ignore.
     }
+    const { state: restored, generated } = restoreMissionState(stored, DEFAULTS, () =>
+      crypto.randomUUID(),
+    );
+    if (generated) {
+      // Store a new id right away so a Strict Mode re-run of this effect reads
+      // it back instead of generating a second one.
+      try {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+      } catch {
+        // ignore
+      }
+    }
+    // Intentional: sessionStorage can't be read during render without a
+    // server/client hydration mismatch, so this one-time post-mount sync
+    // is the point of the effect, not a cascading-render accident.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setState(restored);
     setHydrated(true);
   }, []);
 
@@ -99,7 +74,8 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, [key]: value }));
   };
 
-  const reset = () => setState(DEFAULTS);
+  // The job_id identifies this tab's model on the backend, so it outlives a reset.
+  const reset = () => setState((prev) => ({ ...DEFAULTS, job_id: prev.job_id }));
 
   return (
     <MissionContext.Provider value={{ state, setField, reset }}>
