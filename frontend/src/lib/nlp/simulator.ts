@@ -24,14 +24,6 @@ export interface CompareResult {
   refList: string[];
 }
 
-/** Turn "word1, word2, word3" into ["word1", "word2", "word3"]. */
-export function parseSynonyms(text: string): string[] {
-  return text
-    .split(",")
-    .map((w) => w.trim().toLowerCase())
-    .filter((w) => w.length > 0);
-}
-
 /**
  * Very simple 2D simulator, one command per line, case-insensitive:
  * - Start at (0,0) facing "north" (90 degrees).

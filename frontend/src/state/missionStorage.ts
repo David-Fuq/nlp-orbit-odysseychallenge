@@ -2,7 +2,7 @@
 // sessionStorage blob. Kept out of MissionContext.tsx so it can be unit-tested
 // without React.
 
-import type { EpochMetric, TrainingExample } from "@/lib/nlp/api";
+import type { EpochMetric, Prediction, TrainingExample } from "@/lib/nlp/api";
 import { BASE_EXAMPLES } from "@/lib/nlp/baseExamples";
 import {
   DEFAULT_EPOCHS,
@@ -11,36 +11,16 @@ import {
   isValidEpochs,
   type LearningRatePreset,
 } from "@/lib/nlp/hyperparams";
-import { isTrainingExample } from "@/lib/nlp/intents";
-import {
-  DEFAULT_LEFT_SYNONYMS,
-  DEFAULT_MOVE_SYNONYMS,
-  DEFAULT_RIGHT_SYNONYMS,
-  DEFAULT_TURN_SYNONYMS,
-  SAMPLE_MISSION_LOG,
-} from "@/lib/nlp/data";
+import { INTENTS, isTrainingExample } from "@/lib/nlp/intents";
+import { SAMPLE_MISSION_LOG } from "@/lib/nlp/data";
 
-/**
- * Compatibility stub: fields of the old rule-based mechanism that Step 5 still
- * reads. They stay required so that step keeps compiling unchanged.
- */
-export interface LegacyRuleFields {
-  /** @deprecated Rule-based leftover; PR-09 removes with Step 5. */
-  move_synonyms: string;
-  /** @deprecated Rule-based leftover; PR-09 removes with Step 5. */
-  turn_synonyms: string;
-  /** @deprecated Rule-based leftover; PR-09 removes with Step 5. */
-  left_synonyms: string;
-  /** @deprecated Rule-based leftover; PR-09 removes with Step 5. */
-  right_synonyms: string;
-}
-
-export interface MissionState extends LegacyRuleFields {
+export interface MissionState {
   /** Per-tab model id sent to the backend; "" until generated after mount. */
   job_id: string;
   labeled_examples: TrainingExample[];
   mission_log_1: string;
   student_commands_1: string;
+  /** Hand-typed commands for Step 6's old log; PR-10 switches Step 6 to predicted_new_commands. */
   student_new_commands: string;
   llm_commands_new: string;
   /** Step 4: epochs for the next run, EPOCHS_MIN..EPOCHS_MAX. */
@@ -48,8 +28,10 @@ export interface MissionState extends LegacyRuleFields {
   learning_rate_preset: LearningRatePreset;
   /** Per-epoch metrics of the latest run; cleared when a new run starts. */
   training_history: EpochMetric[];
-  /** Whether the backend holds a trained model for job_id (see Step4Train). */
+  /** Whether the backend holds a trained model for job_id (see useTrainingRun). */
   model_trained: boolean;
+  /** Step 5: the model's last predictions on the held-out log, one per sentence, in order. */
+  predicted_new_commands: Prediction[];
 }
 
 export const DEFAULTS: MissionState = {
@@ -57,25 +39,18 @@ export const DEFAULTS: MissionState = {
   labeled_examples: [...BASE_EXAMPLES],
   mission_log_1: SAMPLE_MISSION_LOG,
   student_commands_1: "",
-  move_synonyms: DEFAULT_MOVE_SYNONYMS,
-  turn_synonyms: DEFAULT_TURN_SYNONYMS,
-  left_synonyms: DEFAULT_LEFT_SYNONYMS,
-  right_synonyms: DEFAULT_RIGHT_SYNONYMS,
   student_new_commands: "",
   llm_commands_new: "",
   epochs: DEFAULT_EPOCHS,
   learning_rate_preset: DEFAULT_PRESET,
   training_history: [],
   model_trained: false,
+  predicted_new_commands: [],
 };
 
 const STRING_FIELDS = [
   "mission_log_1",
   "student_commands_1",
-  "move_synonyms",
-  "turn_synonyms",
-  "left_synonyms",
-  "right_synonyms",
   "student_new_commands",
   "llm_commands_new",
 ] as const satisfies readonly (keyof MissionState)[];
@@ -89,6 +64,18 @@ function isEpochMetric(value: unknown): value is EpochMetric {
     typeof m.intent_loss === "number" &&
     typeof m.amount_loss === "number" &&
     typeof m.intent_accuracy === "number"
+  );
+}
+
+function isPrediction(value: unknown): value is Prediction {
+  if (typeof value !== "object" || value === null) return false;
+  const p = value as Record<string, unknown>;
+  return (
+    typeof p.sentence === "string" &&
+    typeof p.intent === "string" &&
+    (INTENTS as readonly string[]).includes(p.intent) &&
+    (p.amount_cm === null || (typeof p.amount_cm === "number" && Number.isFinite(p.amount_cm))) &&
+    typeof p.command === "string"
   );
 }
 
@@ -115,6 +102,7 @@ export function restoreMissionState(
     ...defaults,
     labeled_examples: [...defaults.labeled_examples],
     training_history: [...defaults.training_history],
+    predicted_new_commands: [...defaults.predicted_new_commands],
   };
 
   for (const key of STRING_FIELDS) {
@@ -139,6 +127,17 @@ export function restoreMissionState(
       intent_loss: m.intent_loss,
       amount_loss: m.amount_loss,
       intent_accuracy: m.intent_accuracy,
+    }));
+  }
+
+  // All or nothing, like the history: a partial list would misalign with the log.
+  const predictions = blob.predicted_new_commands;
+  if (Array.isArray(predictions) && predictions.every(isPrediction)) {
+    state.predicted_new_commands = predictions.map((p) => ({
+      sentence: p.sentence,
+      intent: p.intent,
+      amount_cm: p.amount_cm,
+      command: p.command,
     }));
   }
 

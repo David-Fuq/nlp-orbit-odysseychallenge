@@ -10,7 +10,7 @@ export const STEPS: StepMeta[] = [
   { n: 2, title: "Label Examples" },
   { n: 3, title: "Review Dataset" },
   { n: 4, title: "Train Your Model" },
-  { n: 5, title: "Decode New Log" },
+  { n: 5, title: "Test & Iterate" },
   { n: 6, title: "Compare with LLM" },
 ];
 
