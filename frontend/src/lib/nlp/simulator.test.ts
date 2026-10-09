@@ -1,16 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { comparePaths, parseSynonyms, simulatePath } from "./simulator";
+import { comparePaths, simulatePath } from "./simulator";
 import { NEW_REFERENCE_COMMANDS, REFERENCE_COMMANDS } from "./data";
-
-describe("parseSynonyms", () => {
-  it("splits, trims, lowercases, and drops empties", () => {
-    expect(parseSynonyms("Forward,  Advance ,, cruise ")).toEqual([
-      "forward",
-      "advance",
-      "cruise",
-    ]);
-  });
-});
 
 describe("simulatePath", () => {
   // Anchor for the new grammar: from the origin facing 90 degrees, a forward

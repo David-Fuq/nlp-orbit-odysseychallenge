@@ -27,11 +27,15 @@ describe("restoreMissionState", () => {
     expect(state.job_id).toBe(NEW_ID);
     expect(state.labeled_examples).toEqual(BASE_EXAMPLES);
     expect(state.mission_log_1).toBe("my log");
-    expect(state.move_synonyms).toBe("go");
     expect(state).not.toHaveProperty("actions_list");
     expect(state).not.toHaveProperty("amounts_list");
     expect(state).not.toHaveProperty("landmarks_list");
     expect(state).not.toHaveProperty("student_dict_notes");
+    // Rule-based synonym lists, removed with the old Step 5 in PR-09.
+    expect(state).not.toHaveProperty("move_synonyms");
+    expect(state).not.toHaveProperty("turn_synonyms");
+    expect(state).not.toHaveProperty("left_synonyms");
+    expect(state).not.toHaveProperty("right_synonyms");
   });
 
   it("gives a pre-PR-08 blob the Step 4 defaults", () => {
@@ -42,6 +46,7 @@ describe("restoreMissionState", () => {
     expect(state.training_history).toEqual([]);
     expect(state.model_trained).toBe(false);
     expect(state.mission_log_1).toBe("my log");
+    expect(state).not.toHaveProperty("move_synonyms");
   });
 
   it("restores valid Step 4 fields", () => {
@@ -97,6 +102,40 @@ describe("restoreMissionState", () => {
     }
   });
 
+  it("gives a pre-PR-09 blob no predictions", () => {
+    const blob = { job_id: ID, model_trained: true, student_new_commands: "STRAIGHT 60" };
+    const { state } = restoreMissionState(blob, DEFAULTS, newId);
+    expect(state.predicted_new_commands).toEqual([]);
+    expect(state.student_new_commands).toBe("STRAIGHT 60");
+  });
+
+  it("restores valid predictions as a copy", () => {
+    const predictions = [
+      { sentence: "ease down off the ramp", intent: "STRAIGHT", amount_cm: 9, command: "STRAIGHT 9" },
+      { sentence: "pivot to the right", intent: "TURN_RIGHT", amount_cm: null, command: "TURN RIGHT" },
+      { sentence: "give yourself room", intent: "BACKWARDS", amount_cm: 0, command: "BACKWARDS 0" },
+    ];
+    const { state } = restoreMissionState({ job_id: ID, predicted_new_commands: predictions }, DEFAULTS, newId);
+    expect(state.predicted_new_commands).toEqual(predictions);
+    expect(state.predicted_new_commands).not.toBe(predictions);
+  });
+
+  it("drops a prediction list with any malformed entry", () => {
+    const good = { sentence: "pivot to the right", intent: "TURN_RIGHT", amount_cm: null, command: "TURN RIGHT" };
+    const bads = [
+      [good, { ...good, intent: "TURN_90" }],
+      [good, { ...good, amount_cm: "40" }],
+      [{ sentence: "s", intent: "STRAIGHT", amount_cm: 40 }], // no command
+      [{ ...good, sentence: 3 }],
+      [good, null],
+      "not an array",
+    ];
+    for (const predicted_new_commands of bads) {
+      const { state } = restoreMissionState({ job_id: ID, predicted_new_commands }, DEFAULTS, newId);
+      expect(state.predicted_new_commands).toEqual([]);
+    }
+  });
+
   it("keeps a stored UUID and stored examples", () => {
     const examples = [{ sentence: "creep on 5 cm", intent: "STRAIGHT", amount_cm: 5 }];
     const { state, generated } = restoreMissionState(
@@ -144,6 +183,7 @@ describe("restoreMissionState", () => {
     const { state } = restoreMissionState(null, DEFAULTS, newId);
     expect(state.labeled_examples).not.toBe(DEFAULTS.labeled_examples);
     expect(state.training_history).not.toBe(DEFAULTS.training_history);
+    expect(state.predicted_new_commands).not.toBe(DEFAULTS.predicted_new_commands);
   });
 });
 

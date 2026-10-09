@@ -34,38 +34,6 @@ BACKWARDS 30
 TURN LEFT
 `;
 
-// DEPRECATED: old tile/quarter-turn grammar; removed once PR-09 replaces Step 5.
-// Simple number word -> integer map for the demo.
-// Kept as a record for value lookups; NUMBER_WORD_KEYS preserves the
-// prototype's insertion order for the Step 5 detection display.
-export const NUMBER_WORDS: Record<string, number> = {
-  one: 1,
-  "1": 1,
-  two: 2,
-  "2": 2,
-  three: 3,
-  "3": 3,
-  four: 4,
-  "4": 4,
-};
-
-// DEPRECATED: old tile/quarter-turn grammar; removed once PR-09 replaces Step 5.
-export const NUMBER_WORD_KEYS = ["one", "1", "two", "2", "three", "3", "four", "4"];
-
-// DEPRECATED: old tile/quarter-turn grammar; removed once PR-09 replaces Step 5.
-export const ANGLE_PHRASES: Record<string, number> = {
-  "quarter turn": 90,
-  "half turn": 180,
-  "full turn": 360,
-};
-
-// DEPRECATED: rule-based leftovers still read by Step 5; removed in PR-09.
-// Default synonym lists (from the prototype's st.session_state init).
-export const DEFAULT_MOVE_SYNONYMS = "forward, advance, cruise, ahead";
-export const DEFAULT_TURN_SYNONYMS = "turn, pivot, rotate, swing";
-export const DEFAULT_LEFT_SYNONYMS = "left, counterclockwise";
-export const DEFAULT_RIGHT_SYNONYMS = "right, clockwise";
-
 // Builds the suggested LLM prompt for Step 6 (already includes the log).
 export function buildLlmPrompt(missionLog: string): string {
   return `You are helping students translate a lunar mission log into simple robot commands for a small classroom robot.

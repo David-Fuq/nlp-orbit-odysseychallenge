@@ -8,21 +8,34 @@ export interface BandMessages {
   warning: (distance: string) => string;
 }
 
-// Renders the <0.5 / <1.5 / else success-info-warning band plus the
-// side-by-side command lists, matching the prototype's compare_paths output.
+/** Distance thresholds: below `success` is success, below `info` is info, else warning. */
+export interface DistanceBands {
+  success: number;
+  info: number;
+}
+
+// The prototype's tile-scale thresholds. Centimeter-scale callers pass their
+// own (Step 5 uses HELD_OUT_PATH_BANDS from lib/nlp/grading).
+const DEFAULT_BANDS: DistanceBands = { success: 0.5, info: 1.5 };
+
+// Renders the success/info/warning band for the end-position distance (below
+// bands.success / below bands.info / otherwise) plus the side-by-side command
+// lists, matching the prototype's compare_paths output.
 export default function DistanceResult({
   result,
   messages,
+  bands = DEFAULT_BANDS,
 }: {
   result: CompareResult;
   messages: BandMessages;
+  bands?: DistanceBands;
 }) {
   const d = result.distance;
   const dStr = d.toFixed(2);
 
-  const tone = d < 0.5 ? "success" : d < 1.5 ? "info" : "warning";
+  const tone = d < bands.success ? "success" : d < bands.info ? "info" : "warning";
   const message =
-    d < 0.5 ? messages.success(dStr) : d < 1.5 ? messages.info(dStr) : messages.warning(dStr);
+    tone === "success" ? messages.success(dStr) : tone === "info" ? messages.info(dStr) : messages.warning(dStr);
 
   return (
     <div className="mt-4 space-y-4">

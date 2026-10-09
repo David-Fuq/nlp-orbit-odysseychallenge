@@ -1,30 +1,15 @@
 "use client";
 
 // Step 4: pick epochs + a learning-rate preset, train the real model, and plot
-// the run. Socket lifecycle lives in refs and callbacks, never in render.
-//
-// model_trained means "the backend holds a model for this job_id", the same
-// question GET /api/model answers. So a new run does NOT reset it: the backend
-// keeps the previous model until the new run completes, and keeps it if the
-// run fails. Only `completed` and the mount-time status check change it.
+// the run. The run itself (socket, POST, metrics, model_trained) lives in
+// useTrainingRun, shared with Step 5's retrain; see there for the semantics.
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import Link from "next/link";
 import { useMission } from "@/state/MissionContext";
-import {
-  connectTrainingSocket,
-  getModelStatus,
-  startTraining,
-  type TrainingMessage,
-} from "@/lib/nlp/api";
-import { API_BASE_URL } from "@/lib/nlp/config";
-import {
-  EPOCHS_MAX,
-  EPOCHS_MIN,
-  LEARNING_RATE_PRESET_KEYS,
-  LEARNING_RATE_PRESETS,
-  PRESET_LABELS,
-} from "@/lib/nlp/hyperparams";
+import { getModelStatus } from "@/lib/nlp/api";
+import { EPOCHS_MAX, EPOCHS_MIN, LEARNING_RATE_PRESET_KEYS, PRESET_LABELS } from "@/lib/nlp/hyperparams";
+import { useTrainingRun } from "@/lib/nlp/useTrainingRun";
 import Callout from "@/components/ui/Callout";
 import TrainingChart from "@/components/ui/TrainingChart";
 
@@ -35,43 +20,24 @@ const PRESET_SELECTED = "border-sky-600 bg-sky-600 text-white dark:border-sky-50
 const PRESET_UNSELECTED =
   "border-slate-300 bg-white text-slate-700 hover:border-sky-400 hover:bg-sky-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-sky-600 dark:hover:bg-slate-800";
 
-const UNREACHABLE = `Couldn't reach the training server at ${API_BASE_URL}. Make sure the backend is running, then try again.`;
-
 export default function Step4Train() {
-  const { state, setField, updateField } = useMission();
+  const { state, setField } = useMission();
   const jobId = state.job_id;
-  const [isTraining, setIsTraining] = useState(false);
-  // serverFailed: the backend reported `failed`, so it kept any previous model.
-  const [error, setError] = useState<{ text: string; serverFailed: boolean } | null>(null);
   const [statusNote, setStatusNote] = useState<string | null>(null);
-
-  // Bumped by every new run and by unmount; callbacks from an older run see a
-  // different number and do nothing.
-  const runIdRef = useRef(0);
-  // Set synchronously on click, so a double-click can't start two runs before
-  // the disabled button re-renders.
-  const busyRef = useRef(false);
-  const disconnectRef = useRef<(() => void) | null>(null);
-
-  useEffect(
-    () => () => {
-      runIdRef.current += 1;
-      disconnectRef.current?.();
-      disconnectRef.current = null;
-      busyRef.current = false;
-    },
-    [],
-  );
+  const { isTraining, error, train, currentRunId } = useTrainingRun({
+    onCompleted: () => setStatusNote(null),
+  });
 
   // Mount recovery: once job_id is known, ask the backend whether it holds a
   // model, whatever model_trained says. Covers a missed `completed` and a
   // restarted backend (which forgets every model). A run started meanwhile
   // reports its own outcome, so its result wins over this one.
   const applyModelStatus = useEffectEvent((trained: boolean, runAtStart: number) => {
-    if (runIdRef.current !== runAtStart) return;
+    if (currentRunId() !== runAtStart) return;
     setField("model_trained", trained);
     setStatusNote(null);
   });
+  const runIdNow = useEffectEvent(() => currentRunId());
   const reportStatusUnavailable = useEffectEvent(() => {
     setStatusNote(
       "Couldn't check the training server for your model, so the status below may be out of date.",
@@ -81,7 +47,7 @@ export default function Step4Train() {
   useEffect(() => {
     if (!jobId) return;
     let cancelled = false;
-    const runAtStart = runIdRef.current;
+    const runAtStart = runIdNow();
     getModelStatus(jobId).then(
       (trained) => {
         if (!cancelled) applyModelStatus(trained, runAtStart);
@@ -94,79 +60,6 @@ export default function Step4Train() {
       cancelled = true;
     };
   }, [jobId]);
-
-  const finishRun = (runId: number) => {
-    if (runId !== runIdRef.current) return;
-    disconnectRef.current?.();
-    disconnectRef.current = null;
-    busyRef.current = false;
-    setIsTraining(false);
-  };
-
-  const handleMessage = (runId: number, msg: TrainingMessage) => {
-    if (runId !== runIdRef.current) return;
-    switch (msg.type) {
-      case "metrics":
-        // Functional update: metrics arrive milliseconds apart, faster than
-        // re-renders, so appending to a captured array would drop epochs.
-        updateField("training_history", (prev) => [...prev, msg.metrics]);
-        break;
-      case "completed":
-        setField("model_trained", true);
-        setStatusNote(null);
-        finishRun(runId);
-        break;
-      case "failed":
-        setError({ text: msg.message, serverFailed: true });
-        finishRun(runId);
-        break;
-    }
-  };
-
-  const train = async () => {
-    if (busyRef.current || !jobId) return;
-    busyRef.current = true;
-    const runId = ++runIdRef.current;
-    setIsTraining(true);
-    setError(null);
-
-    const corpus = state.labeled_examples;
-    const learningRate = LEARNING_RATE_PRESETS[state.learning_rate_preset];
-
-    let disconnect: () => void;
-    try {
-      // Awaited on purpose: the socket must be open before the POST, or a run
-      // that finishes in milliseconds is over before we're listening.
-      disconnect = await connectTrainingSocket(jobId, (msg) => handleMessage(runId, msg));
-    } catch {
-      if (runId === runIdRef.current) setError({ text: UNREACHABLE, serverFailed: false });
-      finishRun(runId);
-      return;
-    }
-    if (runId !== runIdRef.current) {
-      // Unmounted while connecting.
-      disconnect();
-      return;
-    }
-    disconnectRef.current = disconnect;
-    // Cleared only now, so an unreachable server keeps the last run's chart.
-    // No metrics can arrive before the POST below, so nothing is lost.
-    setField("training_history", []);
-
-    try {
-      await startTraining(jobId, corpus, state.epochs, learningRate);
-    } catch (err) {
-      if (runId === runIdRef.current) {
-        // fetch rejects with a TypeError when the server can't be reached.
-        setError(
-          err instanceof TypeError
-            ? { text: UNREACHABLE, serverFailed: false }
-            : { text: `The server rejected the training request: ${String(err)}`, serverFailed: true },
-        );
-      }
-      finishRun(runId);
-    }
-  };
 
   const history = state.training_history;
   const examples = state.labeled_examples;
