@@ -1,0 +1,12 @@
+{
+  "mission_log": "Ease down off the ramp and hold a straight line for 7 centimeters. Pivot to the right so the solar panel catches the sunrise. Creep straight ahead another 38 centimeters to line up with the drill hole. Swap ends so the camera mast faces back down the trail. Give yourself 143 centimeters of room by backing off the rim. Haul around to the left and hold there until the telemetry catches up. Finish the run with 64 centimeters straight ahead to the charging pad.",
+  "examples": [
+    {"sentence": "ease down off the ramp and hold a straight line for 7 centimeters", "intent": "STRAIGHT", "amount_cm": 7.0},
+    {"sentence": "pivot to the right so the solar panel catches the sunrise", "intent": "TURN_RIGHT", "amount_cm": null},
+    {"sentence": "creep straight ahead another 38 centimeters to line up with the drill hole", "intent": "STRAIGHT", "amount_cm": 38.0},
+    {"sentence": "swap ends so the camera mast faces back down the trail", "intent": "TURN_180", "amount_cm": null},
+    {"sentence": "give yourself 143 centimeters of room by backing off the rim", "intent": "BACKWARDS", "amount_cm": 143.0},
+    {"sentence": "haul around to the left and hold there until the telemetry catches up", "intent": "TURN_LEFT", "amount_cm": null},
+    {"sentence": "finish the run with 64 centimeters straight ahead to the charging pad", "intent": "STRAIGHT", "amount_cm": 64.0}
+  ]
+}
