@@ -72,6 +72,10 @@ export function MissionProvider({ children }: { children: ReactNode }) {
       const raw = sessionStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<MissionState>;
+        // Intentional: sessionStorage can't be read during render without a
+        // server/client hydration mismatch, so this one-time post-mount sync
+        // is the point of the effect, not a cascading-render accident.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setState((prev) => ({ ...prev, ...parsed }));
       }
     } catch {
