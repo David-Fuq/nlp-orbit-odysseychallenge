@@ -1,6 +1,6 @@
 # Orbit Odyssey NLP backend — PR-02 scaffold.
 #
-# Deliberately minimal. Do NOT add torch here (PR-04 adds it, CPU-only wheel),
+# Deliberately minimal. torch is added below by PR-04 (CPU-only wheel only),
 # and never sqlalchemy / python-jose / passlib: this service has no auth, no
 # database and no job queue. See pr-based-plan/README.md "Locked decisions".
 fastapi
@@ -13,3 +13,12 @@ pytest
 pytest-asyncio
 httpx
 websockets
+
+# PR-04: the model. CPU-only torch -- the default PyPI wheel can pull a
+# multi-GB CUDA build for no benefit. The extra index plus the "+cpu" local
+# version pin make a plain `pip install -r requirements.txt` resolve the CPU
+# wheel without anyone remembering a flag. --extra-index-url (not --index-url)
+# so everything above still comes from PyPI. No numpy: torch's "Failed to
+# initialize NumPy" import warning is expected and harmless here.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
