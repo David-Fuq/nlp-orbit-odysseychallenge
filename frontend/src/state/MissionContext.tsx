@@ -19,6 +19,15 @@ const STORAGE_KEY = "orbit-odyssey-mission";
 interface MissionContextValue {
   state: MissionState;
   setField: <K extends keyof MissionState>(key: K, value: MissionState[K]) => void;
+  /**
+   * Functional form of setField: `fn` receives the latest committed value, so
+   * several updates fired before a re-render (e.g. streamed training metrics)
+   * all apply instead of overwriting each other from a stale closure.
+   */
+  updateField: <K extends keyof MissionState>(
+    key: K,
+    fn: (prev: MissionState[K]) => MissionState[K],
+  ) => void;
   reset: () => void;
 }
 
@@ -74,11 +83,15 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, [key]: value }));
   };
 
+  const updateField: MissionContextValue["updateField"] = (key, fn) => {
+    setState((prev) => ({ ...prev, [key]: fn(prev[key]) }));
+  };
+
   // The job_id identifies this tab's model on the backend, so it outlives a reset.
   const reset = () => setState((prev) => ({ ...DEFAULTS, job_id: prev.job_id }));
 
   return (
-    <MissionContext.Provider value={{ state, setField, reset }}>
+    <MissionContext.Provider value={{ state, setField, updateField, reset }}>
       {children}
     </MissionContext.Provider>
   );

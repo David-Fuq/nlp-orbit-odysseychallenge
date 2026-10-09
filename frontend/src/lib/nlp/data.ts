@@ -59,26 +59,12 @@ export const ANGLE_PHRASES: Record<string, number> = {
   "full turn": 360,
 };
 
-// Step 4 "training data" examples shown to students — one per command in the
-// vocabulary. Superseded later by the real generated corpus.
-export const TRAINING_EXAMPLES: ReadonlyArray<readonly [phrase: string, command: string]> = [
-  ["Roll straight ahead 40 centimeters.", "STRAIGHT 40"],
-  ["Back up 25 centimeters.", "BACKWARDS 25"],
-  ["Pivot 90 degrees to the right.", "TURN RIGHT"],
-  ["Rotate 90 degrees counter-clockwise.", "TURN LEFT"],
-  ["Spin 180 degrees to face the other way.", "TURN 180"],
-];
-
+// DEPRECATED: rule-based leftovers still read by Step 5; removed in PR-09.
 // Default synonym lists (from the prototype's st.session_state init).
 export const DEFAULT_MOVE_SYNONYMS = "forward, advance, cruise, ahead";
 export const DEFAULT_TURN_SYNONYMS = "turn, pivot, rotate, swing";
 export const DEFAULT_LEFT_SYNONYMS = "left, counterclockwise";
 export const DEFAULT_RIGHT_SYNONYMS = "right, clockwise";
-
-// Default key-phrase lists (from the Step 2 text_area defaults).
-export const DEFAULT_ACTIONS = "cruise, forward, pivot";
-export const DEFAULT_AMOUNTS = "two, tiles, quarter turn";
-export const DEFAULT_LANDMARKS = "first crater, communications tower";
 
 // Builds the suggested LLM prompt for Step 6 (already includes the log).
 export function buildLlmPrompt(missionLog: string): string {

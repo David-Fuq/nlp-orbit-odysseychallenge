@@ -9,7 +9,7 @@ export const STEPS: StepMeta[] = [
   { n: 1, title: "Read Mission Log" },
   { n: 2, title: "Label Examples" },
   { n: 3, title: "Review Dataset" },
-  { n: 4, title: "Build Dictionary" },
+  { n: 4, title: "Train Your Model" },
   { n: 5, title: "Decode New Log" },
   { n: 6, title: "Compare with LLM" },
 ];
