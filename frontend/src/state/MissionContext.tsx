@@ -28,7 +28,6 @@ interface MissionContextValue {
     key: K,
     fn: (prev: MissionState[K]) => MissionState[K],
   ) => void;
-  reset: () => void;
 }
 
 const MissionContext = createContext<MissionContextValue | null>(null);
@@ -87,11 +86,8 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, [key]: fn(prev[key]) }));
   };
 
-  // The job_id identifies this tab's model on the backend, so it outlives a reset.
-  const reset = () => setState((prev) => ({ ...DEFAULTS, job_id: prev.job_id }));
-
   return (
-    <MissionContext.Provider value={{ state, setField, updateField, reset }}>
+    <MissionContext.Provider value={{ state, setField, updateField }}>
       {children}
     </MissionContext.Provider>
   );

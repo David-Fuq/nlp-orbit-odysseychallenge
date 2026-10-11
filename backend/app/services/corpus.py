@@ -180,12 +180,12 @@ GARNISH: tuple[tuple[str, str], ...] = tuple(product(LEAD_INS, TAIL_OFFS))
 #
 # A fixed seven-command mission arc covering all five intents, with several
 # held-out phrasings per slot so a different seed yields different prose.
-# Astronaut-voice narrative, modelled on NEW_MISSION_LOG in
-# frontend/src/lib/nlp/data.ts.
+# Astronaut-voice narrative, the same register as the Step 1 mission log.
 #
 # Two deliberate shape rules:
-#   1. One command per sentence. NEW_MISSION_LOG packs two commands into a
-#      single sentence, which makes per-sentence ground truth ill-defined.
+#   1. One command per sentence, so every sentence has exactly one
+#      ground-truth command. A sentence carrying two commands would make
+#      per-sentence grading ill-defined.
 #   2. Every sentence normalises to its ground-truth sentence by lower() plus
 #      dropping the trailing period -- nothing else (hence no internal
 #      commas). ``normalize_sentence`` below is that contract, for PR-09.

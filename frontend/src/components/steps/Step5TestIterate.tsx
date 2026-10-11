@@ -27,6 +27,7 @@ import { useTrainingRun } from "@/lib/nlp/useTrainingRun";
 import Callout from "@/components/ui/Callout";
 import CodeBlock from "@/components/ui/CodeBlock";
 import DistanceResult from "@/components/ui/DistanceResult";
+import MissingIntentsCallout from "@/components/ui/MissingIntentsCallout";
 import TrainingChart from "@/components/ui/TrainingChart";
 
 const CARD = "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900";
@@ -41,7 +42,7 @@ export default function Step5TestIterate() {
   const jobId = state.job_id;
   const [teachNote, setTeachNote] = useState<{ index: number; text: string } | null>(null);
   const { phase, predictions, refresh } = useHeldOutPredictions();
-  const { isTraining, error, train } = useTrainingRun({ onCompleted: refresh });
+  const { isTraining, error, train, missingIntents } = useTrainingRun({ onCompleted: refresh });
 
   const teach = (index: number) => {
     const truth = HELD_OUT_EXAMPLES[index];
@@ -66,7 +67,7 @@ export default function Step5TestIterate() {
   const pathResult = predictions
     ? comparePaths(predictions.map((p) => p.command).join("\n"), HELD_OUT_REFERENCE_COMMANDS)
     : null;
-  const retrainDisabled = isTraining || !jobId || phase === "loading";
+  const retrainDisabled = isTraining || !jobId || phase === "loading" || missingIntents.length > 0;
 
   return (
     <section className="space-y-6">
@@ -231,6 +232,7 @@ export default function Step5TestIterate() {
           >
             {isTraining ? "Training…" : "Retrain"}
           </button>
+          <MissingIntentsCallout missing={missingIntents} />
           {error ? (
             <Callout tone="warning" title="Retraining didn't finish">
               <p>{error.text}</p>

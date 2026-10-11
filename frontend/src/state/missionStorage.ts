@@ -19,7 +19,6 @@ export interface MissionState {
   job_id: string;
   labeled_examples: TrainingExample[];
   mission_log_1: string;
-  student_commands_1: string;
   /**
    * Step 6: the LLM's answer for the held-out log, pasted by the student.
    * Replaces `llm_commands_new` (answers for the old log), which is dropped.
@@ -40,7 +39,6 @@ export const DEFAULTS: MissionState = {
   job_id: "",
   labeled_examples: [...BASE_EXAMPLES],
   mission_log_1: SAMPLE_MISSION_LOG,
-  student_commands_1: "",
   llm_commands_held_out: "",
   epochs: DEFAULT_EPOCHS,
   learning_rate_preset: DEFAULT_PRESET,
@@ -51,7 +49,6 @@ export const DEFAULTS: MissionState = {
 
 const STRING_FIELDS = [
   "mission_log_1",
-  "student_commands_1",
   "llm_commands_held_out",
 ] as const satisfies readonly (keyof MissionState)[];
 

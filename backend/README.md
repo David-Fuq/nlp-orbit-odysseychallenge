@@ -21,6 +21,10 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+Without activating the venv (e.g. from a shell that doesn't run
+`activate`), call its interpreter directly:
+`.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000`.
+
 The Next.js frontend runs separately on port 3000 (`npm run dev` from
 `frontend/`); both processes run at once, in two terminals. CORS is open to
 `http://localhost:3000` only — see `app/config.py`.
@@ -47,11 +51,12 @@ initialize NumPy" warning on import: numpy is deliberately not a dependency.
 ## Tests
 
 ```
-pytest
+pytest                                # venv activated
+.venv\Scripts\python.exe -m pytest    # or without activating it
 ```
 
-`pytest.ini` sets `asyncio_mode = auto`; without it `pytest-asyncio` skips or
-errors on async tests instead of running them.
+Every test is synchronous: `TestClient` drives the event loop itself, so
+there is no `pytest-asyncio`.
 
 The WebSocket test uses `fastapi.testclient.TestClient`, not
 `httpx.AsyncClient` — httpx cannot open a WebSocket at all.
@@ -61,7 +66,7 @@ The WebSocket test uses `fastapi.testclient.TestClient`, not
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/api/health` | `200 {"status": "ok"}` |
-| `POST` | `/api/train` | `202` immediately; progress arrives over the WS channel |
+| `POST` | `/api/train` | `202` immediately; progress arrives over the WS channel. Ignored while that `job_id` is already training |
 | `POST` | `/api/predict` | `404` when no model exists for the `job_id` |
 | `GET` | `/api/model/{job_id}` | **Always `200`**, with a `trained` boolean |
 | `WS` | `/api/ws/training/{job_id}` | No auth (MVP) |
@@ -98,6 +103,15 @@ What one `POST /api/train` produces on the job's socket, in this order:
 3. One `progress` (`epoch / epochs`) then one `metrics` per epoch. The metrics
    dict is `train_model`'s callback payload forwarded unchanged.
 4. `completed` — sent only after the model is in the registry.
+
+**One run per `job_id`.** A `POST /api/train` for a job that is already
+training (a double-clicked Train button) is ignored: it answers `202` with
+`{"status": "already_training"}`, and the job's socket gets a `log`
+("Training is already running for this job; the new request was ignored.").
+The run in progress keeps its stream and its registry write. It is a `log`
+rather than `failed` because `failed` would end the client's view of a run
+that is still going. Once a run ends (`completed` or `failed`), the next
+request is accepted as usual.
 
 Any error ends the stream with `failed` (`message` = the exception text)
 instead of `completed`, and the server stays up. That includes the corpus

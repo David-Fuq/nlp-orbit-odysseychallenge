@@ -13,5 +13,3 @@ export const STEPS: StepMeta[] = [
   { n: 5, title: "Test & Iterate" },
   { n: 6, title: "Compare with LLM" },
 ];
-
-export const TOTAL_STEPS = STEPS.length;

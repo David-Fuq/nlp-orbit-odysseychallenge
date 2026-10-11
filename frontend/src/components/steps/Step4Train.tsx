@@ -11,6 +11,7 @@ import { getModelStatus } from "@/lib/nlp/api";
 import { EPOCHS_MAX, EPOCHS_MIN, LEARNING_RATE_PRESET_KEYS, PRESET_LABELS } from "@/lib/nlp/hyperparams";
 import { useTrainingRun } from "@/lib/nlp/useTrainingRun";
 import Callout from "@/components/ui/Callout";
+import MissingIntentsCallout from "@/components/ui/MissingIntentsCallout";
 import TrainingChart from "@/components/ui/TrainingChart";
 
 const CARD = "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900";
@@ -24,7 +25,7 @@ export default function Step4Train() {
   const { state, setField } = useMission();
   const jobId = state.job_id;
   const [statusNote, setStatusNote] = useState<string | null>(null);
-  const { isTraining, error, train, currentRunId } = useTrainingRun({
+  const { isTraining, error, train, currentRunId, missingIntents } = useTrainingRun({
     onCompleted: () => setStatusNote(null),
   });
 
@@ -63,7 +64,7 @@ export default function Step4Train() {
 
   const history = state.training_history;
   const examples = state.labeled_examples;
-  const disabled = isTraining || !jobId;
+  const disabled = isTraining || !jobId || missingIntents.length > 0;
 
   return (
     <section className="space-y-6">
@@ -158,6 +159,8 @@ export default function Step4Train() {
           {isTraining ? "Training…" : history.length > 0 ? "Train again" : "Train"}
         </button>
       </div>
+
+      <MissingIntentsCallout missing={missingIntents} />
 
       {error ? (
         <Callout tone="warning" title="Training didn't finish">

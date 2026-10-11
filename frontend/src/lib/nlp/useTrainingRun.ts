@@ -14,6 +14,7 @@ import { useMission } from "@/state/MissionContext";
 import { connectTrainingSocket, startTraining, type TrainingMessage } from "./api";
 import { API_BASE_URL } from "./config";
 import { LEARNING_RATE_PRESETS } from "./hyperparams";
+import { missingIntents } from "./intents";
 
 export const UNREACHABLE = `Couldn't reach the training server at ${API_BASE_URL}. Make sure the backend is running, then try again.`;
 
@@ -26,7 +27,9 @@ export interface TrainingRunError {
 /**
  * Trains on the current dataset with the stored epochs and learning-rate
  * preset. `onCompleted` runs after `model_trained` is set by a `completed`
- * message from the latest run.
+ * message from the latest run. `missingIntents` lists intents the dataset has
+ * no examples of; `train` does nothing while it's non-empty, and the step
+ * explains why.
  */
 export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {}) {
   const { state, setField, updateField } = useMission();
@@ -80,8 +83,19 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
     }
   };
 
+  // The socket dropped mid-run (e.g. the backend stopped). No outcome will
+  // arrive, so end the run as unreachable. model_trained is left alone: the
+  // next mount-time status check re-asks the backend.
+  const handleLost = (runId: number) => {
+    if (runId !== runIdRef.current) return;
+    setError({ text: UNREACHABLE, serverFailed: false });
+    finishRun(runId);
+  };
+
+  const missing = missingIntents(state.labeled_examples);
+
   const train = async () => {
-    if (busyRef.current || !jobId) return;
+    if (busyRef.current || !jobId || missing.length > 0) return;
     busyRef.current = true;
     const runId = ++runIdRef.current;
     setIsTraining(true);
@@ -94,7 +108,11 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
     try {
       // Awaited on purpose: the socket must be open before the POST, or a run
       // that finishes in milliseconds is over before we're listening.
-      disconnect = await connectTrainingSocket(jobId, (msg) => handleMessage(runId, msg));
+      disconnect = await connectTrainingSocket(
+        jobId,
+        (msg) => handleMessage(runId, msg),
+        () => handleLost(runId),
+      );
     } catch {
       if (runId === runIdRef.current) setError({ text: UNREACHABLE, serverFailed: false });
       finishRun(runId);
@@ -132,5 +150,5 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
    */
   const currentRunId = () => runIdRef.current;
 
-  return { isTraining, error, train, currentRunId };
+  return { isTraining, error, train, currentRunId, missingIntents: missing };
 }
