@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { buildExample, countByIntent, formatAmount, INTENTS, isTrainingExample, sameSentence } from "./intents";
+import type { TrainingExample } from "./api";
+import {
+  buildExample,
+  countByIntent,
+  formatAmount,
+  type Intent,
+  INTENTS,
+  intentTakesAmount,
+  isTrainingExample,
+  missingIntents,
+  sameSentence,
+} from "./intents";
 
 describe("buildExample", () => {
   it("trims the sentence and keeps the amount for STRAIGHT/BACKWARDS", () => {
@@ -47,6 +58,30 @@ describe("countByIntent", () => {
     expect(counts.STRAIGHT).toBe(2);
     expect(counts.TURN_180).toBe(1);
     expect(counts.TURN_LEFT).toBe(0);
+  });
+});
+
+describe("missingIntents", () => {
+  const one = (intent: Intent): TrainingExample => ({
+    sentence: intent,
+    intent,
+    amount_cm: intentTakesAmount(intent) ? 10 : null,
+  });
+
+  it("is empty when every intent has an example", () => {
+    expect(missingIntents(INTENTS.map(one))).toEqual([]);
+  });
+
+  it("lists the intents with no examples, in INTENTS order", () => {
+    expect(missingIntents([one("TURN_LEFT"), one("STRAIGHT"), one("STRAIGHT")])).toEqual([
+      "BACKWARDS",
+      "TURN_RIGHT",
+      "TURN_180",
+    ]);
+  });
+
+  it("is empty for an empty dataset, which trains on the server's base corpus", () => {
+    expect(missingIntents([])).toEqual([]);
   });
 });
 

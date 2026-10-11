@@ -238,4 +238,41 @@ describe("connectTrainingSocket", () => {
     ws.fireMessage(JSON.stringify({ type: "log", message: "late" }));
     expect(onMessage).not.toHaveBeenCalled();
   });
+
+  it("calls onClose when the server drops the socket after it opened", async () => {
+    const onClose = vi.fn();
+    const pending = connectTrainingSocket("j1", () => {}, onClose);
+    const ws = FakeWebSocket.instances[0];
+    ws.fireOpen();
+    await pending;
+
+    ws.fireClose();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    ws.fireClose();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onClose once when an error after open is followed by close", async () => {
+    const onClose = vi.fn();
+    const pending = connectTrainingSocket("j1", () => {}, onClose);
+    const ws = FakeWebSocket.instances[0];
+    ws.fireOpen();
+    await pending;
+
+    ws.fireError();
+    ws.fireClose();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't call onClose for a socket the caller disconnected", async () => {
+    const onClose = vi.fn();
+    const pending = connectTrainingSocket("j1", () => {}, onClose);
+    const ws = FakeWebSocket.instances[0];
+    ws.fireOpen();
+    const disconnect = await pending;
+
+    disconnect();
+    ws.fireClose();
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

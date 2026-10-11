@@ -8,9 +8,9 @@ uvicorn[standard]
 pydantic-settings
 
 # Test stack. httpx is required by fastapi.testclient.TestClient; websockets
-# backs uvicorn's WS support and TestClient's websocket_connect().
+# backs uvicorn's WS support and TestClient's websocket_connect(). No
+# pytest-asyncio: every test is synchronous (TestClient runs the event loop).
 pytest
-pytest-asyncio
 httpx
 websockets
 

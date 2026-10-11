@@ -153,10 +153,16 @@ export function parseTrainingMessage(data: unknown): TrainingMessage | null {
  * After open, a malformed or unknown message is logged with `console.warn` and
  * ignored; it never throws out of the socket's message handler. The returned
  * disconnect function is safe to call more than once.
+ *
+ * `onClose` fires at most once, when the socket closes or errors after it
+ * opened and the caller didn't disconnect it: the server went away (e.g. the
+ * backend stopped mid-run). The server never closes the socket on its own
+ * after `completed`/`failed`, so callers that disconnect on those don't see it.
  */
 export function connectTrainingSocket(
   jobId: string,
   onMessage: (msg: TrainingMessage) => void,
+  onClose?: () => void,
 ): Promise<() => void> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${WS_BASE_URL}/api/ws/training/${encodeURIComponent(jobId)}`);
@@ -180,14 +186,21 @@ export function connectTrainingSocket(
       resolve(disconnect);
     };
 
+    // After open: the connection dropped. disconnect() nulls the handlers
+    // first, so this runs once even when error is followed by close.
+    const lost = () => {
+      disconnect();
+      onClose?.();
+    };
+
     ws.onerror = () => {
-      if (opened) return;
+      if (opened) return lost();
       disconnect();
       reject(new Error(`Training socket for job ${jobId} failed to open`));
     };
 
     ws.onclose = () => {
-      if (opened) return;
+      if (opened) return lost();
       disconnect();
       reject(new Error(`Training socket for job ${jobId} closed before opening`));
     };

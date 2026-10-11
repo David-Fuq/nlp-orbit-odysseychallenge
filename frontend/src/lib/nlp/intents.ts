@@ -37,6 +37,18 @@ export function countByIntent(examples: readonly TrainingExample[]): Record<Inte
   return counts;
 }
 
+/**
+ * Intents with no examples, in INTENTS order: training is blocked while any
+ * are missing, since a model can't learn a command it has never seen. An
+ * empty dataset returns [] on purpose: the server then trains on its own
+ * complete base corpus.
+ */
+export function missingIntents(examples: readonly TrainingExample[]): Intent[] {
+  if (examples.length === 0) return [];
+  const counts = countByIntent(examples);
+  return INTENTS.filter((i) => counts[i] === 0);
+}
+
 export type BuildResult = { ok: true; example: TrainingExample } | { ok: false; error: string };
 
 /**

@@ -20,6 +20,13 @@ Threading (PR-05):
   N+1's, or before ``completed``.
 - The registry is written on the event loop after ``to_thread`` returns, and
   before ``completed`` is broadcast. A failed run writes nothing.
+
+One run per ``job_id`` (PR-11): a ``POST /api/train`` for a job that is
+already training is ignored. It still gets ``202`` (body status
+``"already_training"``) and the job's socket gets a ``log`` saying so; the
+run in progress keeps its stream and its registry write. Not ``failed``: that
+would end the client's view of a run that is still going. And not "replace":
+a PyTorch worker thread can't be cancelled, so both runs would stream at once.
 """
 
 from __future__ import annotations
@@ -60,6 +67,15 @@ BROADCAST_TIMEOUT_SECONDS = 10.0
 # fire-and-forget task can be garbage-collected mid-flight. Keep a strong
 # reference until it finishes.
 _background_tasks: set[asyncio.Task[None]] = set()
+
+# job_ids with a run in progress. Only touched on the event loop, and the
+# endpoint checks and adds with no ``await`` in between, so two requests can't
+# both get in.
+_active_jobs: set[str] = set()
+
+ALREADY_TRAINING_MESSAGE = (
+    "Training is already running for this job; the new request was ignored."
+)
 
 
 def _spawn(coro: Any) -> None:
@@ -155,6 +171,8 @@ async def _training_run(request: TrainRequest) -> None:
         # for this job_id (if any) stays in place.
         logger.exception("Training failed for job %s", job_id)
         await manager.broadcast(job_id, {"type": "failed", "message": str(exc)})
+    finally:
+        _active_jobs.discard(job_id)
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
@@ -179,7 +197,20 @@ async def train(request: TrainRequest) -> dict[str, str]:
     An empty ``corpus`` trains on the committed default corpus
     (``corpus.load_base_corpus()``). Invalid examples are reported as a
     ``failed`` WS message, not as an HTTP error.
+
+    A request for a ``job_id`` that is already training is ignored (see the
+    module docstring): ``202`` with status ``"already_training"`` and a ``log``
+    on the job's socket.
     """
+    if request.job_id in _active_jobs:
+        logger.info("Ignoring training request for busy job %s", request.job_id)
+        _spawn(
+            manager.broadcast(
+                request.job_id, {"type": "log", "message": ALREADY_TRAINING_MESSAGE}
+            )
+        )
+        return {"job_id": request.job_id, "status": "already_training"}
+    _active_jobs.add(request.job_id)
     logger.info(
         "Training requested for job %s (%d examples, %d epochs, lr=%s)",
         request.job_id,

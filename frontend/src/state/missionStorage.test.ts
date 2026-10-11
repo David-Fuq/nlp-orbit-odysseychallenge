@@ -39,6 +39,8 @@ describe("restoreMissionState", () => {
     // Old-log Step 6 fields, removed in PR-10.
     expect(state).not.toHaveProperty("student_new_commands");
     expect(state).not.toHaveProperty("llm_commands_new");
+    // Old Step 1 manual commands, never used by the trained-model flow; removed in PR-11.
+    expect(state).not.toHaveProperty("student_commands_1");
   });
 
   it("gives a pre-PR-08 blob the Step 4 defaults", () => {

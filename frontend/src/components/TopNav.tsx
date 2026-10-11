@@ -6,7 +6,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 
 const TABS = [
   { label: "Home", href: "/" },
-  { label: "Original Challenge", href: "/steps" },
+  { label: "Mission Training", href: "/steps" },
 ];
 
 export default function TopNav() {

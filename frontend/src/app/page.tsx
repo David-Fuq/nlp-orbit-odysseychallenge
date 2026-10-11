@@ -8,10 +8,10 @@ export default function Home() {
         Teach your robot to <strong>understand language from Mission Control</strong>:
       </p>
       <ul className="list-disc space-y-1 pl-6 text-slate-700 dark:text-slate-300">
-        <li>Break text into important pieces (tokenization &amp; info extraction)</li>
-        <li>Turn sentences into robot commands (intent + parameters)</li>
-        <li>Build a tiny language → command dictionary</li>
-        <li>Test on a new mission log and compare with an LLM</li>
+        <li>Label example sentences with the robot command they mean (intent + distance)</li>
+        <li>Train your own small language model on those examples and watch it learn</li>
+        <li>Test it on a mission log it has never seen, then teach it its mistakes</li>
+        <li>Compare your model with a large language model (LLM)</li>
       </ul>
       <Link
         href="/steps/1"
