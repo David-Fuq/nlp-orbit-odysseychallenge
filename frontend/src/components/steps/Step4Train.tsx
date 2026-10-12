@@ -12,6 +12,7 @@ import { EPOCHS_MAX, EPOCHS_MIN, LEARNING_RATE_PRESET_KEYS, PRESET_LABELS } from
 import { useTrainingRun } from "@/lib/nlp/useTrainingRun";
 import Callout from "@/components/ui/Callout";
 import MissingIntentsCallout from "@/components/ui/MissingIntentsCallout";
+import StartOverButton from "@/components/ui/StartOverButton";
 import TrainingChart from "@/components/ui/TrainingChart";
 
 const CARD = "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900";
@@ -25,7 +26,7 @@ export default function Step4Train() {
   const { state, setField } = useMission();
   const jobId = state.job_id;
   const [statusNote, setStatusNote] = useState<string | null>(null);
-  const { isTraining, error, train, currentRunId, missingIntents } = useTrainingRun({
+  const { isTraining, error, train, currentRunId, missingIntents, locked } = useTrainingRun({
     onCompleted: () => setStatusNote(null),
   });
 
@@ -101,66 +102,78 @@ export default function Step4Train() {
         .
       </p>
 
-      <div className={`${CARD} space-y-6`}>
-        <label className="block">
-          <span className="mb-1 flex items-baseline justify-between text-sm font-semibold text-slate-800 dark:text-slate-200">
-            Epochs
-            <span className="font-mono tabular-nums text-slate-900 dark:text-slate-100">{state.epochs}</span>
-          </span>
-          <input
-            type="range"
-            min={EPOCHS_MIN}
-            max={EPOCHS_MAX}
-            step={1}
-            value={state.epochs}
-            disabled={isTraining}
-            onChange={(e) => setField("epochs", Number(e.target.value))}
-            className="w-full accent-sky-600 disabled:opacity-60"
-          />
-          <span className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
-            <span>{EPOCHS_MIN}</span>
-            <span>{EPOCHS_MAX}</span>
-          </span>
-        </label>
-
-        <div>
-          <p id="lr-label" className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
-            Learning rate
+      {locked ? (
+        <Callout tone="warning" title="Training is locked.">
+          <p>
+            You took the final test in Step 5, so your model is final for this session. The chart below shows
+            its last training run. To train again you&apos;d have to start over, which clears everything.
           </p>
-          <div role="group" aria-labelledby="lr-label" className="grid gap-2 sm:grid-cols-3">
-            {LEARNING_RATE_PRESET_KEYS.map((preset) => {
-              const selected = preset === state.learning_rate_preset;
-              return (
-                <button
-                  key={preset}
-                  type="button"
-                  aria-pressed={selected}
-                  disabled={isTraining}
-                  onClick={() => setField("learning_rate_preset", preset)}
-                  className={`${PRESET_BASE} ${selected ? PRESET_SELECTED : PRESET_UNSELECTED}`}
-                >
-                  <span className="block text-sm font-semibold">{PRESET_LABELS[preset].title}</span>
-                  <span className={`block text-xs ${selected ? "text-sky-50" : "text-slate-500 dark:text-slate-400"}`}>
-                    {PRESET_LABELS[preset].hint}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="pt-2">
+            <StartOverButton />
           </div>
+        </Callout>
+      ) : (
+        <div className={`${CARD} space-y-6`}>
+          <label className="block">
+            <span className="mb-1 flex items-baseline justify-between text-sm font-semibold text-slate-800 dark:text-slate-200">
+              Epochs
+              <span className="font-mono tabular-nums text-slate-900 dark:text-slate-100">{state.epochs}</span>
+            </span>
+            <input
+              type="range"
+              min={EPOCHS_MIN}
+              max={EPOCHS_MAX}
+              step={1}
+              value={state.epochs}
+              disabled={isTraining}
+              onChange={(e) => setField("epochs", Number(e.target.value))}
+              className="w-full accent-sky-600 disabled:opacity-60"
+            />
+            <span className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>{EPOCHS_MIN}</span>
+              <span>{EPOCHS_MAX}</span>
+            </span>
+          </label>
+
+          <div>
+            <p id="lr-label" className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
+              Learning rate
+            </p>
+            <div role="group" aria-labelledby="lr-label" className="grid gap-2 sm:grid-cols-3">
+              {LEARNING_RATE_PRESET_KEYS.map((preset) => {
+                const selected = preset === state.learning_rate_preset;
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={isTraining}
+                    onClick={() => setField("learning_rate_preset", preset)}
+                    className={`${PRESET_BASE} ${selected ? PRESET_SELECTED : PRESET_UNSELECTED}`}
+                  >
+                    <span className="block text-sm font-semibold">{PRESET_LABELS[preset].title}</span>
+                    <span className={`block text-xs ${selected ? "text-sky-50" : "text-slate-500 dark:text-slate-400"}`}>
+                      {PRESET_LABELS[preset].hint}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={train}
+            disabled={disabled}
+            aria-busy={isTraining}
+            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-sky-600"
+          >
+            {isTraining ? "Training…" : history.length > 0 ? "Train again" : "Train"}
+          </button>
         </div>
+      )}
 
-        <button
-          type="button"
-          onClick={train}
-          disabled={disabled}
-          aria-busy={isTraining}
-          className="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-sky-600"
-        >
-          {isTraining ? "Training…" : history.length > 0 ? "Train again" : "Train"}
-        </button>
-      </div>
-
-      <MissingIntentsCallout missing={missingIntents} />
+      {locked ? null : <MissingIntentsCallout missing={missingIntents} />}
 
       {error ? (
         <Callout tone="warning" title="Training didn't finish">
@@ -191,7 +204,7 @@ export default function Step4Train() {
         </p>
       </div>
 
-      {!isTraining && state.model_trained ? (
+      {!isTraining && state.model_trained && !locked ? (
         <Callout tone="success" title="Your model is trained.">
           <p>
             Try another learning rate to compare the curves, or{" "}

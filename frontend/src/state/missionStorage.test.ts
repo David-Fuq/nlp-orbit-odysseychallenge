@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
+import type { Prediction } from "@/lib/nlp/api";
 import { BASE_EXAMPLES } from "@/lib/nlp/baseExamples";
-import { DEFAULTS, isUuid, restoreMissionState } from "./missionStorage";
+import { exampleCommand } from "@/lib/nlp/grading";
+import { FINAL_TEST_LOG, PRACTICE_LOGS, type TestLog } from "@/lib/nlp/testLogs";
+import { DEFAULTS, isUuid, restoreMissionState, type FinalTestResult } from "./missionStorage";
 
 const ID = "3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f";
 const NEW_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const newId = () => NEW_ID;
+
+/** All-correct predictions for `log`, in order. */
+function predictionsFor(log: TestLog): Prediction[] {
+  return log.examples.map((e) => ({ ...e, command: exampleCommand(e) }));
+}
+
+/** A final test with the first sentence wrong. */
+function validFinalTest(): FinalTestResult {
+  const predictions = predictionsFor(FINAL_TEST_LOG);
+  predictions[0] = { ...predictions[0], intent: "BACKWARDS", command: `BACKWARDS ${predictions[0].amount_cm}` };
+  return {
+    predictions,
+    correct: FINAL_TEST_LOG.examples.length - 1,
+    total: FINAL_TEST_LOG.examples.length,
+    taken_at: "2026-10-12T10:00:00.000Z",
+    examples_count: 27,
+  };
+}
 
 describe("restoreMissionState", () => {
   it("upgrades a pre-PR-07 blob: new job_id, seeded examples, removed fields dropped", () => {
@@ -110,8 +131,136 @@ describe("restoreMissionState", () => {
   it("gives a pre-PR-09 blob no predictions", () => {
     const blob = { job_id: ID, model_trained: true, student_new_commands: "STRAIGHT 60" };
     const { state } = restoreMissionState(blob, DEFAULTS, newId);
-    expect(state.predicted_new_commands).toEqual([]);
+    expect(state.round_predictions).toEqual([]);
     expect(state).not.toHaveProperty("student_new_commands");
+  });
+
+  it("upgrades a pre-PR-13 blob: practice defaults, predicted_new_commands dropped", () => {
+    const blob = {
+      job_id: ID,
+      labeled_examples: [{ sentence: "creep on 5 cm", intent: "STRAIGHT", amount_cm: 5 }],
+      model_trained: true,
+      llm_commands_held_out: "STRAIGHT 7",
+      predicted_new_commands: predictionsFor(FINAL_TEST_LOG),
+    };
+    const { state, generated } = restoreMissionState(blob, DEFAULTS, newId);
+    expect(generated).toBe(false);
+    expect(state).not.toHaveProperty("predicted_new_commands");
+    expect(state.practice_round).toBe(0);
+    expect(state.round_predictions).toEqual([]);
+    expect(state.round_history).toEqual([]);
+    expect(state.final_test).toBeNull();
+    expect(state.trained_dataset_key).toBeNull();
+    expect(state.model_trained).toBe(true);
+    expect(state.llm_commands_held_out).toBe("STRAIGHT 7");
+  });
+
+  it("restores an in-range practice_round", () => {
+    const { state } = restoreMissionState({ job_id: ID, practice_round: 4 }, DEFAULTS, newId);
+    expect(state.practice_round).toBe(4);
+  });
+
+  it("rejects an out-of-range or non-integer practice_round", () => {
+    for (const practice_round of [-1, PRACTICE_LOGS.length, 1.5, "1", null]) {
+      const { state } = restoreMissionState({ job_id: ID, practice_round }, DEFAULTS, newId);
+      expect(state.practice_round).toBe(0);
+    }
+  });
+
+  it("restores round predictions aligned with the current practice log", () => {
+    const predictions = predictionsFor(PRACTICE_LOGS[1]);
+    const { state } = restoreMissionState(
+      { job_id: ID, practice_round: 1, round_predictions: predictions },
+      DEFAULTS,
+      newId,
+    );
+    expect(state.round_predictions).toEqual(predictions);
+    expect(state.round_predictions).not.toBe(predictions);
+  });
+
+  it("drops round predictions that are malformed or belong to another log", () => {
+    const good = predictionsFor(PRACTICE_LOGS[0]);
+    const bads = [
+      predictionsFor(PRACTICE_LOGS[1]), // another log
+      predictionsFor(FINAL_TEST_LOG),
+      good.slice(1), // partial
+      [...good.slice(0, -1), { ...good[good.length - 1], intent: "TURN_90" }],
+      [...good.slice(0, -1), { ...good[good.length - 1], amount_cm: "40" }],
+      [...good.slice(0, -1), null],
+      "not an array",
+    ];
+    for (const round_predictions of bads) {
+      const { state } = restoreMissionState({ job_id: ID, round_predictions }, DEFAULTS, newId);
+      expect(state.round_predictions).toEqual([]);
+    }
+  });
+
+  it("restores a well-formed round history", () => {
+    const history = [
+      { log_id: "practice-1", first_correct: 3, latest_correct: 5, total: PRACTICE_LOGS[0].examples.length },
+      { log_id: "practice-2", first_correct: 0, latest_correct: 0, total: PRACTICE_LOGS[1].examples.length },
+    ];
+    const { state } = restoreMissionState({ job_id: ID, round_history: history }, DEFAULTS, newId);
+    expect(state.round_history).toEqual(history);
+    expect(state.round_history).not.toBe(history);
+  });
+
+  it("drops a round history with an unknown log, bad counts or a duplicate", () => {
+    const total = PRACTICE_LOGS[0].examples.length;
+    const good = { log_id: "practice-1", first_correct: 3, latest_correct: 5, total };
+    const bads = [
+      [good, { ...good, log_id: "final" }],
+      [{ ...good, log_id: "practice-9" }],
+      [{ ...good, total: total + 1 }],
+      [{ ...good, first_correct: total + 1 }],
+      [{ ...good, latest_correct: -1 }],
+      [{ ...good, latest_correct: 2.5 }],
+      [good, good],
+      [good, null],
+      "not an array",
+    ];
+    for (const round_history of bads) {
+      const { state } = restoreMissionState({ job_id: ID, round_history }, DEFAULTS, newId);
+      expect(state.round_history).toEqual([]);
+    }
+  });
+
+  it("restores a final test aligned with the final-test log", () => {
+    const finalTest = validFinalTest();
+    const { state } = restoreMissionState({ job_id: ID, final_test: finalTest }, DEFAULTS, newId);
+    expect(state.final_test).toEqual(finalTest);
+    expect(state.final_test).not.toBe(finalTest);
+  });
+
+  it("drops a final test that is misaligned, miscounted or malformed", () => {
+    const good = validFinalTest();
+    const bads = [
+      { ...good, predictions: predictionsFor(PRACTICE_LOGS[0]) },
+      { ...good, predictions: good.predictions.slice(1) },
+      { ...good, correct: good.correct - 1 },
+      { ...good, total: good.total + 1 },
+      { ...good, taken_at: "yesterday" },
+      { ...good, taken_at: 5 },
+      { ...good, examples_count: -1 },
+      { ...good, examples_count: "25" },
+      { ...good, predictions: [...good.predictions.slice(0, -1), null] },
+      "taken",
+      true,
+    ];
+    for (const final_test of bads) {
+      const { state } = restoreMissionState({ job_id: ID, final_test }, DEFAULTS, newId);
+      expect(state.final_test).toBeNull();
+    }
+  });
+
+  it("restores a string trained_dataset_key and rejects other types", () => {
+    expect(restoreMissionState({ job_id: ID, trained_dataset_key: "25:0a1b2c3d" }, DEFAULTS, newId).state.trained_dataset_key).toBe(
+      "25:0a1b2c3d",
+    );
+    for (const trained_dataset_key of [25, null, {}]) {
+      const { state } = restoreMissionState({ job_id: ID, trained_dataset_key }, DEFAULTS, newId);
+      expect(state.trained_dataset_key).toBeNull();
+    }
   });
 
   it("drops a pre-PR-10 blob's old-log Step 6 answers", () => {
@@ -125,33 +274,6 @@ describe("restoreMissionState", () => {
   it("restores the pasted LLM answer for the held-out log", () => {
     const { state } = restoreMissionState({ job_id: ID, llm_commands_held_out: "STRAIGHT 7" }, DEFAULTS, newId);
     expect(state.llm_commands_held_out).toBe("STRAIGHT 7");
-  });
-
-  it("restores valid predictions as a copy", () => {
-    const predictions = [
-      { sentence: "ease down off the ramp", intent: "STRAIGHT", amount_cm: 9, command: "STRAIGHT 9" },
-      { sentence: "pivot to the right", intent: "TURN_RIGHT", amount_cm: null, command: "TURN RIGHT" },
-      { sentence: "give yourself room", intent: "BACKWARDS", amount_cm: 0, command: "BACKWARDS 0" },
-    ];
-    const { state } = restoreMissionState({ job_id: ID, predicted_new_commands: predictions }, DEFAULTS, newId);
-    expect(state.predicted_new_commands).toEqual(predictions);
-    expect(state.predicted_new_commands).not.toBe(predictions);
-  });
-
-  it("drops a prediction list with any malformed entry", () => {
-    const good = { sentence: "pivot to the right", intent: "TURN_RIGHT", amount_cm: null, command: "TURN RIGHT" };
-    const bads = [
-      [good, { ...good, intent: "TURN_90" }],
-      [good, { ...good, amount_cm: "40" }],
-      [{ sentence: "s", intent: "STRAIGHT", amount_cm: 40 }], // no command
-      [{ ...good, sentence: 3 }],
-      [good, null],
-      "not an array",
-    ];
-    for (const predicted_new_commands of bads) {
-      const { state } = restoreMissionState({ job_id: ID, predicted_new_commands }, DEFAULTS, newId);
-      expect(state.predicted_new_commands).toEqual([]);
-    }
   });
 
   it("keeps a stored UUID and stored examples", () => {
@@ -201,7 +323,8 @@ describe("restoreMissionState", () => {
     const { state } = restoreMissionState(null, DEFAULTS, newId);
     expect(state.labeled_examples).not.toBe(DEFAULTS.labeled_examples);
     expect(state.training_history).not.toBe(DEFAULTS.training_history);
-    expect(state.predicted_new_commands).not.toBe(DEFAULTS.predicted_new_commands);
+    expect(state.round_predictions).not.toBe(DEFAULTS.round_predictions);
+    expect(state.round_history).not.toBe(DEFAULTS.round_history);
   });
 });
 

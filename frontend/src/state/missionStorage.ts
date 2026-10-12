@@ -13,6 +13,31 @@ import {
 } from "@/lib/nlp/hyperparams";
 import { INTENTS, isTrainingExample } from "@/lib/nlp/intents";
 import { SAMPLE_MISSION_LOG } from "@/lib/nlp/data";
+import { alignedPredictions, countCorrect } from "@/lib/nlp/rounds";
+import { FINAL_TEST_LOG, PRACTICE_LOGS } from "@/lib/nlp/testLogs";
+
+/** One practice log's scores in Step 5. */
+export interface RoundResult {
+  /** "practice-1" … "practice-5". */
+  log_id: string;
+  /** Score the first time this log was run. */
+  first_correct: number;
+  /** Score after the latest re-run (e.g. after retraining). */
+  latest_correct: number;
+  total: number;
+}
+
+/** The one-shot final test. Once set, training is locked for the session. */
+export interface FinalTestResult {
+  /** Aligned to FINAL_TEST_LOG.examples. */
+  predictions: Prediction[];
+  correct: number;
+  total: number;
+  /** ISO timestamp. */
+  taken_at: string;
+  /** Dataset size of the model that took the test. */
+  examples_count: number;
+}
 
 export interface MissionState {
   /** Per-tab model id sent to the backend; "" until generated after mount. */
@@ -31,8 +56,23 @@ export interface MissionState {
   training_history: EpochMetric[];
   /** Whether the backend holds a trained model for job_id (see useTrainingRun). */
   model_trained: boolean;
-  /** Step 5: the model's last predictions on the held-out log, one per sentence, in order. */
-  predicted_new_commands: Prediction[];
+  /** Step 5: index into PRACTICE_LOGS of the current practice round. */
+  practice_round: number;
+  /**
+   * Step 5: the model's last predictions on the current practice log, one per
+   * sentence, in order. Replaces `predicted_new_commands` (the held-out log's),
+   * which is dropped.
+   */
+  round_predictions: Prediction[];
+  /** Step 5: one entry per practice log attempted, in the order played. */
+  round_history: RoundResult[];
+  /** Step 5's final test; non-null means training is locked. */
+  final_test: FinalTestResult | null;
+  /**
+   * datasetKey() of the corpus behind the backend's current model, set when a
+   * run completes; null when unknown. Step 5 compares it with the dataset now.
+   */
+  trained_dataset_key: string | null;
 }
 
 export const DEFAULTS: MissionState = {
@@ -44,7 +84,11 @@ export const DEFAULTS: MissionState = {
   learning_rate_preset: DEFAULT_PRESET,
   training_history: [],
   model_trained: false,
-  predicted_new_commands: [],
+  practice_round: 0,
+  round_predictions: [],
+  round_history: [],
+  final_test: null,
+  trained_dataset_key: null,
 };
 
 const STRING_FIELDS = [
@@ -76,7 +120,44 @@ function isPrediction(value: unknown): value is Prediction {
   );
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function copyPredictions(predictions: readonly Prediction[]): Prediction[] {
+  return predictions.map((p) => ({ sentence: p.sentence, intent: p.intent, amount_cm: p.amount_cm, command: p.command }));
+}
+
+function isCount(value: unknown, max: number): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= max;
+}
+
+function isRoundResult(value: unknown): value is RoundResult {
+  if (typeof value !== "object" || value === null) return false;
+  const r = value as Record<string, unknown>;
+  const log = PRACTICE_LOGS.find((l) => l.id === r.log_id);
+  if (!log) return false;
+  const total = log.examples.length;
+  return r.total === total && isCount(r.first_correct, total) && isCount(r.latest_correct, total);
+}
+
+/** A stored final test, or null unless it is complete and consistent with FINAL_TEST_LOG. */
+function restoreFinalTest(value: unknown): FinalTestResult | null {
+  if (typeof value !== "object" || value === null) return null;
+  const f = value as Record<string, unknown>;
+  const predictions = f.predictions;
+  if (!Array.isArray(predictions) || !predictions.every(isPrediction)) return null;
+  if (alignedPredictions(FINAL_TEST_LOG, predictions) === null) return null;
+  if (f.total !== FINAL_TEST_LOG.examples.length) return null;
+  if (f.correct !== countCorrect(FINAL_TEST_LOG, predictions)) return null;
+  if (typeof f.taken_at !== "string" || Number.isNaN(Date.parse(f.taken_at))) return null;
+  if (!Number.isInteger(f.examples_count) || (f.examples_count as number) < 0) return null;
+  return {
+    predictions: copyPredictions(predictions),
+    correct: f.correct,
+    total: f.total,
+    taken_at: f.taken_at,
+    examples_count: f.examples_count as number,
+  };
+}
+
+const UUID_RE =/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value);
@@ -99,7 +180,8 @@ export function restoreMissionState(
     ...defaults,
     labeled_examples: [...defaults.labeled_examples],
     training_history: [...defaults.training_history],
-    predicted_new_commands: [...defaults.predicted_new_commands],
+    round_predictions: [...defaults.round_predictions],
+    round_history: [...defaults.round_history],
   };
 
   for (const key of STRING_FIELDS) {
@@ -127,16 +209,41 @@ export function restoreMissionState(
     }));
   }
 
-  // All or nothing, like the history: a partial list would misalign with the log.
-  const predictions = blob.predicted_new_commands;
-  if (Array.isArray(predictions) && predictions.every(isPrediction)) {
-    state.predicted_new_commands = predictions.map((p) => ({
-      sentence: p.sentence,
-      intent: p.intent,
-      amount_cm: p.amount_cm,
-      command: p.command,
+  const round = blob.practice_round;
+  if (Number.isInteger(round) && (round as number) >= 0 && (round as number) < PRACTICE_LOGS.length) {
+    state.practice_round = round as number;
+  }
+
+  // All or nothing, like the history, and only for the current round's log:
+  // a partial or other-log list would misalign with the table.
+  const predictions = blob.round_predictions;
+  if (
+    Array.isArray(predictions) &&
+    predictions.every(isPrediction) &&
+    alignedPredictions(PRACTICE_LOGS[state.practice_round], predictions) !== null
+  ) {
+    state.round_predictions = copyPredictions(predictions);
+  }
+
+  const rounds = blob.round_history;
+  if (
+    Array.isArray(rounds) &&
+    rounds.every(isRoundResult) &&
+    new Set(rounds.map((r) => r.log_id)).size === rounds.length
+  ) {
+    state.round_history = rounds.map((r) => ({
+      log_id: r.log_id,
+      first_correct: r.first_correct,
+      latest_correct: r.latest_correct,
+      total: r.total,
     }));
   }
+
+  // An invalid final test can only come from tampering, so falling back to
+  // "not taken" (training unlocked) is acceptable.
+  state.final_test = restoreFinalTest(blob.final_test);
+
+  if (typeof blob.trained_dataset_key === "string") state.trained_dataset_key = blob.trained_dataset_key;
 
   if (isUuid(blob.job_id)) {
     state.job_id = blob.job_id;

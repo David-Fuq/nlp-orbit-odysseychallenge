@@ -15,6 +15,7 @@ import { connectTrainingSocket, startTraining, type TrainingMessage } from "./ap
 import { API_BASE_URL } from "./config";
 import { LEARNING_RATE_PRESETS } from "./hyperparams";
 import { missingIntents } from "./intents";
+import { canStartTraining, datasetKey } from "./rounds";
 
 export const UNREACHABLE = `Couldn't reach the training server at ${API_BASE_URL}. Make sure the backend is running, then try again.`;
 
@@ -29,7 +30,8 @@ export interface TrainingRunError {
  * preset. `onCompleted` runs after `model_trained` is set by a `completed`
  * message from the latest run. `missingIntents` lists intents the dataset has
  * no examples of; `train` does nothing while it's non-empty, and the step
- * explains why.
+ * explains why. `locked` means the final test was taken: `train` refuses to
+ * start for the rest of the session.
  */
 export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {}) {
   const { state, setField, updateField } = useMission();
@@ -63,7 +65,7 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
     setIsTraining(false);
   };
 
-  const handleMessage = (runId: number, msg: TrainingMessage) => {
+  const handleMessage = (runId: number, corpusKey: string, msg: TrainingMessage) => {
     if (runId !== runIdRef.current) return;
     switch (msg.type) {
       case "metrics":
@@ -72,6 +74,9 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
         updateField("training_history", (prev) => [...prev, msg.metrics]);
         break;
       case "completed":
+        // Only now: a failed run leaves the backend's previous model, whose
+        // dataset key is still the stored one.
+        setField("trained_dataset_key", corpusKey);
         setField("model_trained", true);
         finishRun(runId);
         onCompleted?.();
@@ -93,15 +98,22 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
   };
 
   const missing = missingIntents(state.labeled_examples);
+  const locked = state.final_test !== null;
 
   const train = async () => {
-    if (busyRef.current || !jobId || missing.length > 0) return;
+    // The guard of record for the final-test lock; disabled buttons only mirror it.
+    if (
+      !canStartTraining({ busy: busyRef.current, jobId, missingIntents: missing, finalTest: state.final_test })
+    ) {
+      return;
+    }
     busyRef.current = true;
     const runId = ++runIdRef.current;
     setIsTraining(true);
     setError(null);
 
     const corpus = state.labeled_examples;
+    const corpusKey = datasetKey(corpus);
     const learningRate = LEARNING_RATE_PRESETS[state.learning_rate_preset];
 
     let disconnect: () => void;
@@ -110,7 +122,7 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
       // that finishes in milliseconds is over before we're listening.
       disconnect = await connectTrainingSocket(
         jobId,
-        (msg) => handleMessage(runId, msg),
+        (msg) => handleMessage(runId, corpusKey, msg),
         () => handleLost(runId),
       );
     } catch {
@@ -150,5 +162,5 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
    */
   const currentRunId = () => runIdRef.current;
 
-  return { isTraining, error, train, currentRunId, missingIntents: missing };
+  return { isTraining, error, train, currentRunId, missingIntents: missing, locked };
 }

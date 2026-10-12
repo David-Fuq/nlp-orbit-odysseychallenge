@@ -3,8 +3,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BASE_EXAMPLES } from "./baseExamples";
 import { CANDIDATE_SENTENCES } from "./candidateSentences";
-import { INTENTS } from "./intents";
+import { INTENTS, isTrainingExample } from "./intents";
 import { FINAL_TEST_LOG, PRACTICE_LOGS, referenceCommands } from "./testLogs";
+import { trigrams } from "./trigrams";
 
 const SOURCE = new URL("../../../../backend/app/services/data/test_logs.json", import.meta.url);
 const COPY = new URL("./testLogs.json", import.meta.url);
@@ -13,21 +14,6 @@ const COPY = new URL("./testLogs.json", import.meta.url);
 // compare them with line endings normalised; everything else must match.
 function readText(url: URL): string {
   return readFileSync(fileURLToPath(url), "utf8").replace(/\r\n/g, "\n");
-}
-
-// Three-word sequences the way the backend model tokenises: lowercase,
-// whitespace split, punctuation stripped from token edges, numerals as <num>.
-// Mirrors backend/app/services/tokenizer.py and test_corpus.py's _trigrams.
-function trigrams(sentence: string): Set<string> {
-  const tokens = sentence
-    .toLowerCase()
-    .split(/\s+/)
-    .map((t) => t.replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, ""))
-    .filter((t) => t !== "")
-    .map((t) => (Number.isFinite(Number(t)) ? "<num>" : t));
-  const out = new Set<string>();
-  for (let i = 0; i + 3 <= tokens.length; i++) out.add(tokens.slice(i, i + 3).join(" "));
-  return out;
 }
 
 describe("test-log bank", () => {
@@ -53,6 +39,14 @@ describe("test-log bank", () => {
       expect(log.examples.length).toBeLessThanOrEqual(7);
       expect(new Set(log.examples.map((e) => e.intent))).toEqual(new Set(INTENTS));
       expect(log.examples).toHaveLength(log.mission_log.split(/(?<=\.)\s+/).length);
+    }
+  });
+
+  it("every log has one valid example per narrative sentence", () => {
+    // Moved from the PR-12 held-out shim's test, now for every log.
+    for (const log of [...PRACTICE_LOGS, FINAL_TEST_LOG]) {
+      expect(log.examples).toHaveLength(log.mission_log.split(/(?<=\.)\s+/).length);
+      expect(log.examples.every(isTrainingExample)).toBe(true);
     }
   });
 
