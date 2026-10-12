@@ -8,8 +8,8 @@
 // NOTE: the mission-log prose below is placeholder-quality and wants an
 // editorial pass. Whenever it changes, REFERENCE_COMMANDS must change with
 // it — that command list is the ground truth for this log, so prose and
-// commands drifting apart is a real bug, not a copy nit. (The held-out test
-// log for Steps 5 and 6 lives in heldOutTestLog.ts.)
+// commands drifting apart is a real bug, not a copy nit. (The test logs for
+// Steps 5 and 6 live in testLogs.ts.)
 
 export const SAMPLE_MISSION_LOG = `From your current position, roll straight ahead 40 centimeters
 until you are just past the first crater. Then rotate 90 degrees to
@@ -22,7 +22,7 @@ STRAIGHT 25
 `;
 
 // Builds the suggested LLM prompt for Step 6 (already includes the log).
-// Step 6 passes HELD_OUT_MISSION_LOG, whose turns name a direction or a
+// Step 6 passes the final-test log, whose turns name a direction or a
 // half turn ("pivot to the right", "swap ends", "haul around to the left")
 // rather than an angle, and one of whose sentences only says to wait.
 export function buildLlmPrompt(missionLog: string): string {

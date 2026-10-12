@@ -7,8 +7,11 @@ import {
   isPredictionCorrect,
   planTeach,
 } from "./grading";
-import { HELD_OUT_EXAMPLES, HELD_OUT_REFERENCE_COMMANDS } from "./heldOutTestLog";
 import { comparePaths } from "./simulator";
+import { FINAL_TEST_LOG, referenceCommands } from "./testLogs";
+
+const HELD_OUT_EXAMPLES = FINAL_TEST_LOG.examples;
+const HELD_OUT_REFERENCE_COMMANDS = referenceCommands(FINAL_TEST_LOG);
 
 const straight40: TrainingExample = { sentence: "roll ahead 40 cm", intent: "STRAIGHT", amount_cm: 40 };
 const back30: TrainingExample = { sentence: "back up 30 cm", intent: "BACKWARDS", amount_cm: 30 };

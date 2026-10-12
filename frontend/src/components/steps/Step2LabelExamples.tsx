@@ -8,6 +8,7 @@ import { CANDIDATE_SENTENCES } from "@/lib/nlp/candidateSentences";
 import { formatAmount, INTENT_LABELS, sameSentence } from "@/lib/nlp/intents";
 import Callout from "@/components/ui/Callout";
 import ExampleEditor from "@/components/ui/ExampleEditor";
+import TrainingLockedNote from "@/components/ui/TrainingLockedNote";
 
 const CARD = "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900";
 
@@ -33,6 +34,8 @@ export default function Step2LabelExamples() {
           each sentence means, and those labels become its training data.
         </p>
       </header>
+
+      <TrainingLockedNote />
 
       <Callout tone="info" title="What does this sentence mean?">
         <ul className="list-disc space-y-1 pl-5">

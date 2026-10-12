@@ -28,12 +28,35 @@ interface MissionContextValue {
     key: K,
     fn: (prev: MissionState[K]) => MissionState[K],
   ) => void;
+  /**
+   * "Start over": a fresh session with a new job_id, saved immediately. The
+   * old model is simply orphaned on the backend.
+   */
+  startOver: () => void;
 }
 
 const MissionContext = createContext<MissionContextValue | null>(null);
 
-export function MissionProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<MissionState>(DEFAULTS);
+function persist(state: MissionState) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // sessionStorage may be unavailable (private mode) — ignore.
+  }
+}
+
+/**
+ * `initialState` is what the first render (and so server rendering) shows
+ * before the stored session loads; tests render steps with it.
+ */
+export function MissionProvider({
+  children,
+  initialState = DEFAULTS,
+}: {
+  children?: ReactNode;
+  initialState?: MissionState;
+}) {
+  const [state, setState] = useState<MissionState>(initialState);
   const [hydrated, setHydrated] = useState(false);
 
   // Load persisted state once, after the initial (deterministic) render so
@@ -53,11 +76,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     if (generated) {
       // Store a new id right away so a Strict Mode re-run of this effect reads
       // it back instead of generating a second one.
-      try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
-      } catch {
-        // ignore
-      }
+      persist(restored);
     }
     // Intentional: sessionStorage can't be read during render without a
     // server/client hydration mismatch, so this one-time post-mount sync
@@ -71,11 +90,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   // values with the defaults on first mount.
   useEffect(() => {
     if (!hydrated) return;
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // ignore
-    }
+    persist(state);
   }, [state, hydrated]);
 
   const setField: MissionContextValue["setField"] = (key, value) => {
@@ -86,8 +101,20 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, [key]: fn(prev[key]) }));
   };
 
+  const startOver = () => {
+    const fresh: MissionState = {
+      ...DEFAULTS,
+      labeled_examples: [...DEFAULTS.labeled_examples],
+      job_id: crypto.randomUUID(),
+    };
+    // Saved now rather than by the effect, so a reload straight after
+    // can't bring the old session back.
+    persist(fresh);
+    setState(fresh);
+  };
+
   return (
-    <MissionContext.Provider value={{ state, setField, updateField }}>
+    <MissionContext.Provider value={{ state, setField, updateField, startOver }}>
       {children}
     </MissionContext.Provider>
   );

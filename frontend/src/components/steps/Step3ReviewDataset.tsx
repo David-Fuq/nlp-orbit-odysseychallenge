@@ -8,6 +8,7 @@ import Callout from "@/components/ui/Callout";
 import DatasetTable from "@/components/ui/DatasetTable";
 import ExampleEditor from "@/components/ui/ExampleEditor";
 import IntentCounts from "@/components/ui/IntentCounts";
+import TrainingLockedNote from "@/components/ui/TrainingLockedNote";
 
 const DUPLICATE = "That sentence is already in your dataset.";
 
@@ -49,6 +50,8 @@ export default function Step3ReviewDataset() {
           labeled. Check it before training.
         </p>
       </header>
+
+      <TrainingLockedNote />
 
       <Callout tone="info" title="Why balance matters:">
         <ul className="list-disc space-y-1 pl-5">

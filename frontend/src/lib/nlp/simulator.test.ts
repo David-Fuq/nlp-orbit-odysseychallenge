@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { comparePaths, simulatePath } from "./simulator";
 import { REFERENCE_COMMANDS } from "./data";
-import { HELD_OUT_REFERENCE_COMMANDS } from "./heldOutTestLog";
+import { FINAL_TEST_LOG, referenceCommands } from "./testLogs";
 
 describe("simulatePath", () => {
   // Anchor for the new grammar: from the origin facing 90 degrees, a forward
@@ -54,7 +54,7 @@ describe("simulatePath", () => {
     // STRAIGHT 7 -> (0,7) h90; TURN RIGHT -> h0; STRAIGHT 38 -> (38,7);
     // TURN 180 -> h180 (west); BACKWARDS 143 -> back east to (181,7);
     // TURN LEFT -> h270 (south); STRAIGHT 64 -> (181,-57).
-    const { x, y, heading, lines } = simulatePath(HELD_OUT_REFERENCE_COMMANDS);
+    const { x, y, heading, lines } = simulatePath(referenceCommands(FINAL_TEST_LOG));
     expect(x).toBeCloseTo(181, 10);
     expect(y).toBeCloseTo(-57, 10);
     expect(heading).toBe(270);
