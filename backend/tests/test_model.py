@@ -25,6 +25,7 @@ from app.services.model import (
     IntentAmountModel,
     TrainedModel,
     _encode_batch,
+    count_parameters,
     predict,
     train_model,
 )
@@ -327,3 +328,24 @@ def test_unseen_amounts_track_magnitude(trained: TrainedModel) -> None:
     high = _predict(trained, "go forward 50 cm")["amount_cm"]
     print(f"\nunseen 30 cm -> {low}, unseen 50 cm -> {high}")
     assert high - low > 10
+
+
+def test_parameter_count_grows_with_vocabulary() -> None:
+    """The embedding table has one row per vocabulary word, so more words, more parameters."""
+    small = train_model(FIXTURE[:5], epochs=1, learning_rate=0.01)
+    extra = [TrainingExample("glide onward past the boulder field 30 cm", S, 30.0)]
+    large = train_model(FIXTURE + extra, epochs=1, learning_rate=0.01)
+
+    assert large.tokenizer.vocab_size > small.tokenizer.vocab_size
+    assert count_parameters(large.model) > count_parameters(small.model) > 0
+    # Only the embedding depends on the vocabulary.
+    growth = large.tokenizer.vocab_size - small.tokenizer.vocab_size
+    assert count_parameters(large.model) - count_parameters(small.model) == growth * large.model.embedding.embedding_dim
+
+
+def test_training_seconds_excludes_callback_time() -> None:
+    """``training_seconds`` times training, not a slow ``on_epoch_end`` (e.g. WebSocket sends)."""
+    epochs, pause = 3, 0.05
+    trained = train_model(FIXTURE, epochs, 0.01, on_epoch_end=lambda _metrics: time.sleep(pause))
+
+    assert 0 < trained.training_seconds < epochs * pause

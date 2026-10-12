@@ -6,6 +6,7 @@ import Step3ReviewDataset from "@/components/steps/Step3ReviewDataset";
 import Step4Train from "@/components/steps/Step4Train";
 import Step5TestIterate from "@/components/steps/Step5TestIterate";
 import Step6CompareLLM from "@/components/steps/Step6CompareLLM";
+import Step7Cost from "@/components/steps/Step7Cost";
 import { STEPS } from "@/lib/steps";
 
 const STEP_COMPONENTS: Record<number, ComponentType> = {
@@ -15,6 +16,7 @@ const STEP_COMPONENTS: Record<number, ComponentType> = {
   4: Step4Train,
   5: Step5TestIterate,
   6: Step6CompareLLM,
+  7: Step7Cost,
 };
 
 export function generateStaticParams() {

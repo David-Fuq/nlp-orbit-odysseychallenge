@@ -24,6 +24,7 @@ import Step3ReviewDataset from "./Step3ReviewDataset";
 import Step4Train from "./Step4Train";
 import Step5TestIterate from "./Step5TestIterate";
 import Step6CompareLLM from "./Step6CompareLLM";
+import Step7Cost from "./Step7Cost";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
@@ -34,6 +35,7 @@ const STEPS: [string, ComponentType][] = [
   ["Step 4", Step4Train],
   ["Step 5", Step5TestIterate],
   ["Step 6", Step6CompareLLM],
+  ["Step 7", Step7Cost],
 ];
 
 const ID = "3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f";
@@ -98,8 +100,13 @@ const takenState: MissionState = {
 };
 
 describe("final-test log before the final test", () => {
-  it("Steps 1–6 render no part of the final-test log before the final test", () => {
-    for (const state of [DEFAULTS, { ...DEFAULTS, job_id: ID, model_trained: true }]) {
+  it("Steps 1–7 render no part of the final-test log before the final test", () => {
+    const stats = { parameters: 3528, training_seconds: 0.42, examples: 15, epochs: 20 };
+    for (const state of [
+      DEFAULTS,
+      { ...DEFAULTS, job_id: ID, model_trained: true },
+      { ...DEFAULTS, job_id: ID, model_trained: true, last_training_stats: stats },
+    ]) {
       for (const [name, Step] of STEPS) {
         expect({ step: name, leaks: finalLogLeaks(renderTexts(Step, state)) }).toEqual({ step: name, leaks: [] });
       }
@@ -112,6 +119,13 @@ describe("final-test log before the final test", () => {
     expect(text).toContain(FINAL_TEST_LOG.mission_log.toLowerCase());
     expect(text).toContain("swap ends");
     expect(finalLogLeaks(texts).length).toBeGreaterThan(0);
+  });
+
+  it("Step 7 shows the final-test score after the test, but never the log itself", () => {
+    const texts = renderTexts(Step7Cost, takenState);
+    const total = FINAL_TEST_LOG.examples.length;
+    expect(texts.join(" ")).toContain(`${total} of ${total} sentences correct`);
+    expect(finalLogLeaks(texts)).toEqual([]);
   });
 
   it("Step 5 shows the final-test sentences in its results view", () => {

@@ -70,6 +70,12 @@ export default function Step6CompareLLM() {
           </p>
         </Callout>
       )}
+
+      <p>
+        <Link href="/steps/7" className="font-medium text-sky-700 underline dark:text-sky-400">
+          Continue to Step 7: what did your model cost? →
+        </Link>
+      </p>
     </section>
   );
 }

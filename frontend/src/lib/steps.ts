@@ -12,4 +12,5 @@ export const STEPS: StepMeta[] = [
   { n: 4, title: "Train Your Model" },
   { n: 5, title: "Test & Iterate" },
   { n: 6, title: "Compare with LLM" },
+  { n: 7, title: "What Did It Cost?" },
 ];

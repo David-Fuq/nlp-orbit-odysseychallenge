@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { useMission } from "@/state/MissionContext";
 import type { TrainingExample } from "@/lib/nlp/api";
@@ -13,8 +14,19 @@ import TrainingLockedNote from "@/components/ui/TrainingLockedNote";
 const CARD = "rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900";
 
 export default function Step2LabelExamples() {
-  const { state, setField } = useMission();
+  const { state, setField, updateField } = useMission();
   const examples = state.labeled_examples;
+  const hydrated = state.job_id !== "";
+
+  // Step 7's labeling time starts the first time this step is open. Waits for
+  // the stored session to load (job_id is "" until then), or the restore would
+  // overwrite it; `prev ??` keeps the first value through Strict Mode re-runs,
+  // later visits and reloads.
+  const labelingStarted = state.labeling_started_at !== null;
+  useEffect(() => {
+    if (!hydrated || labelingStarted) return;
+    updateField("labeling_started_at", (prev) => prev ?? new Date().toISOString());
+  }, [hydrated, labelingStarted, updateField]);
   const starterCount = examples.filter(isStarterExample).length;
 
   const addExample = (example: TrainingExample): string | null => {
