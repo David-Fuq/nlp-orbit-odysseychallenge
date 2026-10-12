@@ -1,8 +1,8 @@
 """
 app.services.corpus
 -------------------
-Template-based generator for the labeled training corpus and the held-out
-test mission log.
+Template-based generator for the labeled training corpus and the test-log
+bank: five practice mission logs plus the final-test log (PR-12).
 
 Pure data generation: ``random``, ``dataclasses``, ``json``, ``pathlib``, and
 nothing else. There is deliberately **no ML framework dependency here** -- the
@@ -41,7 +41,7 @@ import random
 from dataclasses import asdict, dataclass
 from itertools import product
 from pathlib import Path
-from typing import Any, Iterable, Literal, Optional, Sequence
+from typing import Any, Iterable, Literal, Optional, Sequence, TypedDict
 
 Intent = Literal["STRAIGHT", "BACKWARDS", "TURN_RIGHT", "TURN_LEFT", "TURN_180"]
 
@@ -83,11 +83,27 @@ TURN_INTENTS: tuple[Intent, ...] = ("TURN_RIGHT", "TURN_LEFT", "TURN_180")
 AMOUNT_MIN_CM = 5
 AMOUNT_MAX_CM = 150
 
-#: Amounts held back from the corpus so the test log is a *generalization*
+#: The final-test log draws its amounts from this pool. It is the original
+#: reserved tuple, kept in the same order, so ``generate_test_log`` samples
+#: exactly what it always did and the final log stays byte-identical.
+FINAL_TEST_AMOUNTS: tuple[int, ...] = (7, 26, 38, 64, 81, 97, 118, 143)
+
+#: The practice logs' pool. Disjoint from the final pool, and also clear of
+#: Step 2's candidate amounts (12, 18, 25, 70) and of 90, which the turn
+#: templates use as an angle. The practice logs deal from one deck, so every
+#: amount appears at most once across the whole bank; two values are spare.
+PRACTICE_TEST_AMOUNTS: tuple[int, ...] = (
+    9, 13, 22, 29, 33, 44, 49, 56, 61, 69,
+    74, 78, 88, 94, 103, 109, 121, 126, 134, 147,
+)
+
+#: Amounts held back from the corpus so the test logs are a *generalization*
 #: test rather than a memorization check. Excluding them from the corpus pool
 #: makes the no-overlap guarantee structural: it holds for every corpus seed
 #: and every ``examples_per_intent``, not just the seeded defaults.
-RESERVED_TEST_AMOUNTS: tuple[int, ...] = (7, 26, 38, 64, 81, 97, 118, 143)
+RESERVED_TEST_AMOUNTS: tuple[int, ...] = tuple(
+    sorted(FINAL_TEST_AMOUNTS + PRACTICE_TEST_AMOUNTS)
+)
 
 #: Whole centimeters available to ``generate_corpus``.
 CORPUS_AMOUNTS: tuple[int, ...] = tuple(
@@ -255,12 +271,301 @@ TEST_LOG_SLOTS: tuple[tuple[Intent, tuple[str, ...]], ...] = (
 )
 
 # --------------------------------------------------------------------------
+# Practice mission logs (PR-12)
+#
+# Five more arcs for Step 5's practice rounds, with the same shape rules as
+# TEST_LOG_SLOTS: one command per sentence, every sentence normalises to its
+# ground truth by ``normalize_sentence``, at most one numeral per sentence.
+# Each arc covers all five intents in 6-7 slots, with 2+ phrasings per slot.
+#
+# Students add practice sentences to their own training data, so these
+# phrasings must not leak into the final log, and must not come from TEMPLATES
+# either, or a practice round would test memorization. tests/test_corpus.py
+# enforces both: no practice phrasing shares a three-word sequence (numerals
+# as <num>) with any TEST_LOG_SLOTS variant or any TEMPLATES x GARNISH form.
+# The turn vocabulary is deliberately new (port, starboard, anticlockwise,
+# about-face, end for end) so every round meets unfamiliar wording.
+# --------------------------------------------------------------------------
+
+PRACTICE_LOG_ARCS: tuple[tuple[tuple[Intent, tuple[str, ...]], ...], ...] = (
+    # practice-1: out of the hangar and back.
+    (
+        (
+            "STRAIGHT",
+            (
+                "Leave the hangar bay and coast {cm} centimeters onto the open flats.",
+                "Clear the hangar doors by driving {cm} centimeters forward.",
+            ),
+        ),
+        (
+            "TURN_LEFT",
+            (
+                "Hook left around the antenna mast.",
+                "Rotate a quarter turn counterclockwise so the crater wall fills the windshield.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Trundle {cm} centimeters farther until the first sampling flag is beside you.",
+                "Keep going {cm} centimeters past the cable spool.",
+            ),
+        ),
+        (
+            "BACKWARDS",
+            (
+                "Throw it in reverse and cover {cm} centimeters while the drill retracts.",
+                "Shuffle backward {cm} centimeters while the scoop drops.",
+            ),
+        ),
+        (
+            "TURN_RIGHT",
+            (
+                "Rotate a quarter turn clockwise toward the seismometer.",
+                "Angle off to starboard to point at the seismometer.",
+            ),
+        ),
+        (
+            "TURN_180",
+            (
+                "Wheel round completely so the headlights face the hangar again.",
+                "Reverse course so the rear bumper points at the ridge.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Wrap up by cruising {cm} centimeters back into the hangar.",
+                "End the loop with a {cm} centimeter roll into the hangar.",
+            ),
+        ),
+    ),
+    # practice-2: sheltering from a dust storm.
+    (
+        (
+            "TURN_RIGHT",
+            (
+                "Cut hard right at the shelter rocks.",
+                "Steer starboard toward the shelter rocks.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Dash {cm} centimeters ahead before visibility drops.",
+                "Charge forward {cm} centimeters while you can still see the rocks.",
+            ),
+        ),
+        (
+            "TURN_LEFT",
+            (
+                "Tuck in to port behind the tallest rock.",
+                "Bank left and shelter the solar wings behind the boulder.",
+            ),
+        ),
+        (
+            "BACKWARDS",
+            (
+                "Inch rearward {cm} centimeters into the windbreak.",
+                "Tuck yourself in by backing {cm} centimeters under the ledge.",
+            ),
+        ),
+        (
+            "TURN_180",
+            (
+                "Turn tail so the storm blows against your back panel.",
+                "Face the opposite direction and let the storm pass behind you.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Once it clears roll {cm} centimeters out into the open.",
+                "When the air clears creep {cm} centimeters beyond the rocks.",
+            ),
+        ),
+    ),
+    # practice-3: probing the ice.
+    (
+        (
+            "STRAIGHT",
+            (
+                "Slide forward {cm} centimeters over the frozen crust.",
+                "Proceed {cm} centimeters over the ice sheet.",
+            ),
+        ),
+        (
+            "TURN_LEFT",
+            (
+                "Make a 90 degree turn to port toward the vent.",
+                "Peel off leftward toward the steam vent.",
+            ),
+        ),
+        (
+            "BACKWARDS",
+            (
+                "Give ground {cm} centimeters because the ice is cracking.",
+                "Back off {cm} centimeters now that the ice is groaning.",
+            ),
+        ),
+        (
+            "TURN_RIGHT",
+            (
+                "Swivel rightward until the drill is aimed at the vent.",
+                "Make a 90 degree turn to starboard.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Crawl onward {cm} centimeters then plant the probe.",
+                "Advance carefully {cm} centimeters with the probe lowered.",
+            ),
+        ),
+        (
+            "TURN_180",
+            (
+                "Do a complete reversal and retrace your route across the ice.",
+                "Pirouette fully around and face the lander.",
+            ),
+        ),
+        (
+            "BACKWARDS",
+            (
+                "Withdraw {cm} centimeters as the probe takes its reading.",
+                "Finish by easing {cm} centimeters in reverse.",
+            ),
+        ),
+    ),
+    # practice-4: docking at the relay station.
+    (
+        (
+            "TURN_LEFT",
+            (
+                "Swerve left to meet the relay station head on.",
+                "Wheel to port and square the rover with the mast.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Shrink the gap by {cm} centimeters.",
+                "Head straight in {cm} centimeters right against the docking port.",
+            ),
+        ),
+        (
+            "TURN_180",
+            (
+                "About-face so the cargo hatch opens toward the station.",
+                "Present your back hatch to the station by spinning completely around.",
+            ),
+        ),
+        (
+            "BACKWARDS",
+            (
+                "Back the hatch in {cm} centimeters against the station.",
+                "Creep in reverse {cm} centimeters till the loading arm touches the hatch.",
+            ),
+        ),
+        (
+            "TURN_RIGHT",
+            (
+                "Swing out to starboard once the transfer is done.",
+                "Veer clockwise and leave the station behind.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Depart {cm} centimeters down the service road.",
+                "Pull forward {cm} centimeters clear of the station.",
+            ),
+        ),
+    ),
+    # practice-5: a canyon run.
+    (
+        (
+            "TURN_RIGHT",
+            (
+                "Face starboard and look down into the canyon.",
+                "Twist clockwise until the canyon mouth is in view.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Descend the slope {cm} centimeters on low gear.",
+                "Edge forward {cm} centimeters on the gravel slope.",
+            ),
+        ),
+        (
+            "TURN_LEFT",
+            (
+                "Cut left along the canyon floor.",
+                "Rotate anticlockwise to trace the canyon wall.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Sprint {cm} centimeters between the canyon walls.",
+                "Hustle forward {cm} centimeters beneath the arch.",
+            ),
+        ),
+        (
+            "TURN_180",
+            (
+                "Dead end so turn the rover end for end.",
+                "Hit the dead end and pivot to face where you started.",
+            ),
+        ),
+        (
+            "BACKWARDS",
+            (
+                "Reverse clear of the dead end by {cm} centimeters.",
+                "Retreat slowly {cm} centimeters with the walls closing in.",
+            ),
+        ),
+        (
+            "STRAIGHT",
+            (
+                "Gun it the last {cm} centimeters.",
+                "Make the final {cm} centimeter dash toward the exit.",
+            ),
+        ),
+    ),
+)
+
+# --------------------------------------------------------------------------
 # Paths
 # --------------------------------------------------------------------------
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 BASE_CORPUS_PATH = DATA_DIR / "base_corpus.json"
-TEST_LOG_PATH = DATA_DIR / "test_log.json"
+TEST_LOGS_PATH = DATA_DIR / "test_logs.json"
+
+
+@dataclass
+class TestLog:
+    """One mission log of the test-log bank: prose plus per-sentence labels.
+
+    ``examples`` carries one ``TrainingExample`` per sentence of
+    ``mission_log``, in order. ``id`` is ``practice-1`` ... ``practice-5`` or
+    ``final`` (README, "Test-log bank file").
+    """
+
+    __test__ = False  # not a pytest test class, despite the name
+
+    id: str
+    mission_log: str
+    examples: list[TrainingExample]
+
+
+class LogBank(TypedDict):
+    """The whole test-log bank, shaped like ``test_logs.json``."""
+
+    practice: list[TestLog]
+    final: TestLog
 
 
 def normalize_sentence(sentence: str) -> str:
@@ -354,24 +659,23 @@ def generate_corpus(
     return corpus
 
 
-def generate_test_log(seed: int = 123) -> tuple[str, list[TrainingExample]]:
-    """Generate the held-out test mission log and its ground-truth labels.
+def _numeric_slot_count(slots: Iterable[tuple[Intent, tuple[str, ...]]]) -> int:
+    return sum(1 for intent, _ in slots if intent in NUMERIC_INTENTS)
 
-    Returns ``(mission_log, examples)`` where *mission_log* is one narrative
-    astronaut-voice paragraph and *examples* carries one ``TrainingExample``
-    per sentence in it, in order. This is Step 5's held-out set (PR-09).
 
-    It does not overlap ``generate_corpus()`` by construction, not by luck:
-    its amounts come from ``RESERVED_TEST_AMOUNTS``, which the corpus pool
-    excludes, and its phrasings are a separate table from ``TEMPLATES``.
+def _render_log(
+    rng: random.Random,
+    slots: Sequence[tuple[Intent, tuple[str, ...]]],
+    amounts: list[int],
+) -> tuple[str, list[TrainingExample]]:
+    """Pick one phrasing per slot and fill distance slots from *amounts*.
+
+    Consumes *amounts* from the front, one per distance slot, so a caller can
+    deal a single deck across several logs.
     """
-    rng = random.Random(seed)
-    numeric_slots = sum(1 for intent, _ in TEST_LOG_SLOTS if intent in NUMERIC_INTENTS)
-    amounts = rng.sample(RESERVED_TEST_AMOUNTS, k=numeric_slots)
-
     sentences: list[str] = []
     examples: list[TrainingExample] = []
-    for intent, variants in TEST_LOG_SLOTS:
+    for intent, variants in slots:
         prose = rng.choice(variants)
         if intent in NUMERIC_INTENTS:
             amount = amounts.pop(0)
@@ -381,8 +685,57 @@ def generate_test_log(seed: int = 123) -> tuple[str, list[TrainingExample]]:
             amount_cm = None
         sentences.append(prose)
         examples.append(TrainingExample(normalize_sentence(prose), intent, amount_cm))
-
     return " ".join(sentences), examples
+
+
+def generate_test_log(seed: int = 123) -> tuple[str, list[TrainingExample]]:
+    """Generate the final-test mission log and its ground-truth labels.
+
+    Returns ``(mission_log, examples)`` where *mission_log* is one narrative
+    astronaut-voice paragraph and *examples* carries one ``TrainingExample``
+    per sentence in it, in order. This is the held-out set Steps 5 and 6 use
+    today (PR-09/10) and the bank's ``final`` log (PR-12).
+
+    It does not overlap ``generate_corpus()`` by construction, not by luck:
+    its amounts come from ``FINAL_TEST_AMOUNTS``, part of the reserved set the
+    corpus pool excludes, and its phrasings are a separate table from
+    ``TEMPLATES``. The rng draws (sample, then one choice per slot) are in the
+    same order as before PR-12, which is what keeps the output unchanged.
+    """
+    rng = random.Random(seed)
+    amounts = rng.sample(FINAL_TEST_AMOUNTS, k=_numeric_slot_count(TEST_LOG_SLOTS))
+    return _render_log(rng, TEST_LOG_SLOTS, amounts)
+
+
+def generate_practice_logs(seed: int = 123) -> list[TestLog]:
+    """Generate the five practice logs, ``practice-1`` ... ``practice-5``.
+
+    Uses its own ``random.Random``, seeded apart from the final log's, so
+    editing the practice tables can never change the final log. Amounts are
+    dealt from one shuffled deck of ``PRACTICE_TEST_AMOUNTS``, so none repeats
+    anywhere in the bank.
+    """
+    rng = random.Random(f"{seed}-practice")
+    needed = sum(_numeric_slot_count(arc) for arc in PRACTICE_LOG_ARCS)
+    deck = rng.sample(PRACTICE_TEST_AMOUNTS, k=needed)
+    logs: list[TestLog] = []
+    for number, arc in enumerate(PRACTICE_LOG_ARCS, start=1):
+        mission_log, examples = _render_log(rng, arc, deck)
+        logs.append(TestLog(f"practice-{number}", mission_log, examples))
+    return logs
+
+
+def generate_test_logs(seed: int = 123) -> LogBank:
+    """Generate the whole test-log bank: ``{"practice": [...], "final": ...}``.
+
+    ``practice`` is a list of five ``TestLog``; ``final`` is the
+    ``generate_test_log`` output wrapped as a ``TestLog`` with id ``final``.
+    """
+    mission_log, examples = generate_test_log(seed)
+    return {
+        "practice": generate_practice_logs(seed),
+        "final": TestLog("final", mission_log, examples),
+    }
 
 
 # --------------------------------------------------------------------------
@@ -437,13 +790,37 @@ def dumps_corpus(examples: Sequence[TrainingExample]) -> str:
     return _format_example_array(examples, indent="  ", group_by_intent=True) + "\n"
 
 
-def dumps_test_log(mission_log: str, examples: Sequence[TrainingExample]) -> str:
-    """Serialise the test log as ``{"mission_log": ..., "examples": [...]}``."""
-    body = _format_example_array(examples, indent="    ")
+def _dumps_test_log_object(log: TestLog, indent: str) -> str:
+    """One ``{"id", "mission_log", "examples"}`` object, examples one per line.
+
+    *indent* is the indentation of the object's fields; the closing brace sits
+    one level (two spaces) shallower.
+    """
+    body = _format_example_array(log.examples, indent=indent + "  ")
     return (
         "{\n"
-        f'  "mission_log": {json.dumps(mission_log, ensure_ascii=False)},\n'
-        f'  "examples": {body}\n'
+        f'{indent}"id": {json.dumps(log.id)},\n'
+        f'{indent}"mission_log": {json.dumps(log.mission_log, ensure_ascii=False)},\n'
+        f'{indent}"examples": {body}\n'
+        f"{indent[:-2]}}}"
+    )
+
+
+def dumps_test_logs(bank: LogBank) -> str:
+    """Serialise the bank as ``{"practice": [...], "final": {...}}``.
+
+    The README's "Test-log bank file" contract, with the same one-example-per-
+    line layout the single test log used, so the practice phrasings are easy to
+    review in a diff.
+    """
+    practice = ",\n".join(
+        "    " + _dumps_test_log_object(log, indent="      ") for log in bank["practice"]
+    )
+    final = _dumps_test_log_object(bank["final"], indent="    ")
+    return (
+        "{\n"
+        f'  "practice": [\n{practice}\n  ],\n'
+        f'  "final": {final}\n'
         "}\n"
     )
 
@@ -458,28 +835,47 @@ def load_base_corpus() -> list[TrainingExample]:
         return [_from_dict(item) for item in json.load(handle)]
 
 
-def load_test_log() -> tuple[str, list[TrainingExample]]:
-    """Read the committed ``test_log.json`` as ``(mission_log, examples)``."""
-    with TEST_LOG_PATH.open(encoding="utf-8") as handle:
+def _test_log_from_dict(payload: dict[str, Any]) -> TestLog:
+    return TestLog(
+        id=payload["id"],
+        mission_log=payload["mission_log"],
+        examples=[_from_dict(item) for item in payload["examples"]],
+    )
+
+
+def load_test_logs() -> LogBank:
+    """Read the committed ``test_logs.json`` bank."""
+    with TEST_LOGS_PATH.open(encoding="utf-8") as handle:
         payload = json.load(handle)
-    return payload["mission_log"], [_from_dict(item) for item in payload["examples"]]
+    return {
+        "practice": [_test_log_from_dict(item) for item in payload["practice"]],
+        "final": _test_log_from_dict(payload["final"]),
+    }
+
+
+def load_test_log() -> tuple[str, list[TrainingExample]]:
+    """The committed final-test log as ``(mission_log, examples)``.
+
+    Kept from before PR-12, when the final log was the only test log, so
+    existing callers don't change.
+    """
+    final = load_test_logs()["final"]
+    return final.mission_log, final.examples
 
 
 def write_data_files(
     corpus_seed: int = 42,
     examples_per_intent: int = 30,
     test_log_seed: int = 123,
-) -> tuple[list[TrainingExample], str, list[TrainingExample]]:
+) -> tuple[list[TrainingExample], LogBank]:
     """Regenerate and overwrite both committed JSON files."""
     corpus = generate_corpus(seed=corpus_seed, examples_per_intent=examples_per_intent)
-    mission_log, test_examples = generate_test_log(seed=test_log_seed)
+    bank = generate_test_logs(seed=test_log_seed)
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     BASE_CORPUS_PATH.write_text(dumps_corpus(corpus), encoding="utf-8")
-    TEST_LOG_PATH.write_text(
-        dumps_test_log(mission_log, test_examples), encoding="utf-8"
-    )
-    return corpus, mission_log, test_examples
+    TEST_LOGS_PATH.write_text(dumps_test_logs(bank), encoding="utf-8")
+    return corpus, bank
 
 
 def _amount_set(examples: Iterable[TrainingExample]) -> list[int]:
@@ -493,10 +889,11 @@ def main() -> None:
 
         python -m app.services.corpus
     """
-    corpus, mission_log, test_examples = write_data_files()
+    corpus, bank = write_data_files()
+    logs = [*bank["practice"], bank["final"]]
 
     print(f"wrote {BASE_CORPUS_PATH} ({len(corpus)} examples)")
-    print(f"wrote {TEST_LOG_PATH} ({len(test_examples)} examples)")
+    print(f"wrote {TEST_LOGS_PATH} ({len(logs)} logs)")
     print()
     print("per-intent counts:")
     for intent in INTENTS:
@@ -506,13 +903,19 @@ def main() -> None:
     print(f"  unique sentences: {len({e.sentence for e in corpus})}/{len(corpus)}")
     print()
     corpus_amounts = _amount_set(corpus)
-    log_amounts = _amount_set(test_examples)
+    log_amounts = _amount_set(e for log in logs for e in log.examples)
     print(f"corpus amounts   ({len(corpus_amounts):>3}): {corpus_amounts}")
     print(f"test-log amounts ({len(log_amounts):>3}): {log_amounts}")
     print(f"amount overlap: {sorted(set(corpus_amounts) & set(log_amounts))}")
-    print()
-    print("mission log:")
-    print(f"  {mission_log}")
+    for log in logs:
+        print()
+        print(f"{log.id}:")
+        print(f"  {log.mission_log}")
+        for example in log.examples:
+            command = example.intent.replace("_", " ")
+            if example.amount_cm is not None:
+                command = f"{command} {int(example.amount_cm)}"
+            print(f"    {command:<14} {example.sentence}")
 
 
 if __name__ == "__main__":

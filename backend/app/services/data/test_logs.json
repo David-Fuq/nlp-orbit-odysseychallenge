@@ -1,0 +1,80 @@
+{
+  "practice": [
+    {
+      "id": "practice-1",
+      "mission_log": "Leave the hangar bay and coast 29 centimeters onto the open flats. Hook left around the antenna mast. Keep going 109 centimeters past the cable spool. Shuffle backward 103 centimeters while the scoop drops. Angle off to starboard to point at the seismometer. Reverse course so the rear bumper points at the ridge. End the loop with a 74 centimeter roll into the hangar.",
+      "examples": [
+        {"sentence": "leave the hangar bay and coast 29 centimeters onto the open flats", "intent": "STRAIGHT", "amount_cm": 29.0},
+        {"sentence": "hook left around the antenna mast", "intent": "TURN_LEFT", "amount_cm": null},
+        {"sentence": "keep going 109 centimeters past the cable spool", "intent": "STRAIGHT", "amount_cm": 109.0},
+        {"sentence": "shuffle backward 103 centimeters while the scoop drops", "intent": "BACKWARDS", "amount_cm": 103.0},
+        {"sentence": "angle off to starboard to point at the seismometer", "intent": "TURN_RIGHT", "amount_cm": null},
+        {"sentence": "reverse course so the rear bumper points at the ridge", "intent": "TURN_180", "amount_cm": null},
+        {"sentence": "end the loop with a 74 centimeter roll into the hangar", "intent": "STRAIGHT", "amount_cm": 74.0}
+      ]
+    },
+    {
+      "id": "practice-2",
+      "mission_log": "Steer starboard toward the shelter rocks. Dash 49 centimeters ahead before visibility drops. Bank left and shelter the solar wings behind the boulder. Inch rearward 121 centimeters into the windbreak. Face the opposite direction and let the storm pass behind you. When the air clears creep 9 centimeters beyond the rocks.",
+      "examples": [
+        {"sentence": "steer starboard toward the shelter rocks", "intent": "TURN_RIGHT", "amount_cm": null},
+        {"sentence": "dash 49 centimeters ahead before visibility drops", "intent": "STRAIGHT", "amount_cm": 49.0},
+        {"sentence": "bank left and shelter the solar wings behind the boulder", "intent": "TURN_LEFT", "amount_cm": null},
+        {"sentence": "inch rearward 121 centimeters into the windbreak", "intent": "BACKWARDS", "amount_cm": 121.0},
+        {"sentence": "face the opposite direction and let the storm pass behind you", "intent": "TURN_180", "amount_cm": null},
+        {"sentence": "when the air clears creep 9 centimeters beyond the rocks", "intent": "STRAIGHT", "amount_cm": 9.0}
+      ]
+    },
+    {
+      "id": "practice-3",
+      "mission_log": "Proceed 69 centimeters over the ice sheet. Peel off leftward toward the steam vent. Back off 134 centimeters now that the ice is groaning. Swivel rightward until the drill is aimed at the vent. Crawl onward 44 centimeters then plant the probe. Pirouette fully around and face the lander. Withdraw 13 centimeters as the probe takes its reading.",
+      "examples": [
+        {"sentence": "proceed 69 centimeters over the ice sheet", "intent": "STRAIGHT", "amount_cm": 69.0},
+        {"sentence": "peel off leftward toward the steam vent", "intent": "TURN_LEFT", "amount_cm": null},
+        {"sentence": "back off 134 centimeters now that the ice is groaning", "intent": "BACKWARDS", "amount_cm": 134.0},
+        {"sentence": "swivel rightward until the drill is aimed at the vent", "intent": "TURN_RIGHT", "amount_cm": null},
+        {"sentence": "crawl onward 44 centimeters then plant the probe", "intent": "STRAIGHT", "amount_cm": 44.0},
+        {"sentence": "pirouette fully around and face the lander", "intent": "TURN_180", "amount_cm": null},
+        {"sentence": "withdraw 13 centimeters as the probe takes its reading", "intent": "BACKWARDS", "amount_cm": 13.0}
+      ]
+    },
+    {
+      "id": "practice-4",
+      "mission_log": "Swerve left to meet the relay station head on. Head straight in 126 centimeters right against the docking port. Present your back hatch to the station by spinning completely around. Creep in reverse 22 centimeters till the loading arm touches the hatch. Swing out to starboard once the transfer is done. Pull forward 33 centimeters clear of the station.",
+      "examples": [
+        {"sentence": "swerve left to meet the relay station head on", "intent": "TURN_LEFT", "amount_cm": null},
+        {"sentence": "head straight in 126 centimeters right against the docking port", "intent": "STRAIGHT", "amount_cm": 126.0},
+        {"sentence": "present your back hatch to the station by spinning completely around", "intent": "TURN_180", "amount_cm": null},
+        {"sentence": "creep in reverse 22 centimeters till the loading arm touches the hatch", "intent": "BACKWARDS", "amount_cm": 22.0},
+        {"sentence": "swing out to starboard once the transfer is done", "intent": "TURN_RIGHT", "amount_cm": null},
+        {"sentence": "pull forward 33 centimeters clear of the station", "intent": "STRAIGHT", "amount_cm": 33.0}
+      ]
+    },
+    {
+      "id": "practice-5",
+      "mission_log": "Twist clockwise until the canyon mouth is in view. Edge forward 147 centimeters on the gravel slope. Cut left along the canyon floor. Sprint 61 centimeters between the canyon walls. Dead end so turn the rover end for end. Retreat slowly 78 centimeters with the walls closing in. Make the final 56 centimeter dash toward the exit.",
+      "examples": [
+        {"sentence": "twist clockwise until the canyon mouth is in view", "intent": "TURN_RIGHT", "amount_cm": null},
+        {"sentence": "edge forward 147 centimeters on the gravel slope", "intent": "STRAIGHT", "amount_cm": 147.0},
+        {"sentence": "cut left along the canyon floor", "intent": "TURN_LEFT", "amount_cm": null},
+        {"sentence": "sprint 61 centimeters between the canyon walls", "intent": "STRAIGHT", "amount_cm": 61.0},
+        {"sentence": "dead end so turn the rover end for end", "intent": "TURN_180", "amount_cm": null},
+        {"sentence": "retreat slowly 78 centimeters with the walls closing in", "intent": "BACKWARDS", "amount_cm": 78.0},
+        {"sentence": "make the final 56 centimeter dash toward the exit", "intent": "STRAIGHT", "amount_cm": 56.0}
+      ]
+    }
+  ],
+  "final": {
+    "id": "final",
+    "mission_log": "Ease down off the ramp and hold a straight line for 7 centimeters. Pivot to the right so the solar panel catches the sunrise. Creep straight ahead another 38 centimeters to line up with the drill hole. Swap ends so the camera mast faces back down the trail. Give yourself 143 centimeters of room by backing off the rim. Haul around to the left and hold there until the telemetry catches up. Finish the run with 64 centimeters straight ahead to the charging pad.",
+    "examples": [
+      {"sentence": "ease down off the ramp and hold a straight line for 7 centimeters", "intent": "STRAIGHT", "amount_cm": 7.0},
+      {"sentence": "pivot to the right so the solar panel catches the sunrise", "intent": "TURN_RIGHT", "amount_cm": null},
+      {"sentence": "creep straight ahead another 38 centimeters to line up with the drill hole", "intent": "STRAIGHT", "amount_cm": 38.0},
+      {"sentence": "swap ends so the camera mast faces back down the trail", "intent": "TURN_180", "amount_cm": null},
+      {"sentence": "give yourself 143 centimeters of room by backing off the rim", "intent": "BACKWARDS", "amount_cm": 143.0},
+      {"sentence": "haul around to the left and hold there until the telemetry catches up", "intent": "TURN_LEFT", "amount_cm": null},
+      {"sentence": "finish the run with 64 centimeters straight ahead to the charging pad", "intent": "STRAIGHT", "amount_cm": 64.0}
+    ]
+  }
+}

@@ -1,9 +1,20 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BASE_EXAMPLES, isStarterExample } from "./baseExamples";
 import { CANDIDATE_SENTENCES } from "./candidateSentences";
 import { countByIntent, INTENTS, isTrainingExample, sameSentence } from "./intents";
 
+const SOURCE = new URL("../../../../backend/app/services/data/base_corpus.json", import.meta.url);
+
 describe("BASE_EXAMPLES", () => {
+  it("only holds rows of backend/app/services/data/base_corpus.json", () => {
+    const corpus = JSON.parse(readFileSync(fileURLToPath(SOURCE), "utf8")) as unknown[];
+    for (const example of BASE_EXAMPLES) {
+      expect(corpus).toContainEqual(example);
+    }
+  });
+
   it("is a small trimmed set: 3-4 examples per intent", () => {
     const counts = countByIntent(BASE_EXAMPLES);
     for (const intent of INTENTS) {
