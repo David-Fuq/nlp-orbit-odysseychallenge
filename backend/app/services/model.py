@@ -29,6 +29,7 @@ broadcasting.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Sequence
 
@@ -104,6 +105,15 @@ class TrainedModel:
 
     model: IntentAmountModel
     tokenizer: Tokenizer
+    #: Wall-clock seconds of the epoch loop, excluding time spent inside
+    #: ``on_epoch_end`` (which blocks on WebSocket sends in the router), so it
+    #: measures training, not the network. Reported in ``completed.stats``.
+    training_seconds: float = 0.0
+
+
+def count_parameters(model: nn.Module) -> int:
+    """Trainable parameter count. It grows with the vocabulary (the embedding table)."""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 def _encode_batch(
@@ -142,6 +152,9 @@ def train_model(
     rows. ``intent_accuracy`` is training-set accuracy in ``[0, 1]`` from the
     same forward pass. All values are plain Python numbers.
 
+    The returned ``training_seconds`` times the epoch loop with
+    ``time.perf_counter()``, minus the time spent inside ``on_epoch_end``.
+
     Weight init uses torch's global RNG; seed it (``torch.manual_seed``) before
     calling if you need reproducibility. Nothing else here is random.
     """
@@ -177,6 +190,8 @@ def train_model(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     model.train()
 
+    callback_seconds = 0.0
+    loop_start = time.perf_counter()
     for epoch in range(1, epochs + 1):
         optimizer.zero_grad()
         intent_logits, amount_pred = model(token_ids, pad_mask, num_feats)
@@ -191,17 +206,19 @@ def train_model(
 
         if on_epoch_end is not None:
             accuracy = (intent_logits.argmax(dim=-1) == intent_targets).float().mean()
-            on_epoch_end(
-                {
-                    "epoch": epoch,
-                    "intent_loss": intent_loss.item(),
-                    "amount_loss": amount_loss.item(),
-                    "intent_accuracy": accuracy.item(),
-                }
-            )
+            metrics = {
+                "epoch": epoch,
+                "intent_loss": intent_loss.item(),
+                "amount_loss": amount_loss.item(),
+                "intent_accuracy": accuracy.item(),
+            }
+            callback_start = time.perf_counter()
+            on_epoch_end(metrics)
+            callback_seconds += time.perf_counter() - callback_start
+    training_seconds = time.perf_counter() - loop_start - callback_seconds
 
     model.eval()
-    return TrainedModel(model=model, tokenizer=tokenizer)
+    return TrainedModel(model=model, tokenizer=tokenizer, training_seconds=training_seconds)
 
 
 def predict(model: IntentAmountModel, tokenizer: Tokenizer, sentence: str) -> dict[str, Any]:

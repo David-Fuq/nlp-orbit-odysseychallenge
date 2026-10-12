@@ -23,11 +23,22 @@ export interface Prediction {
   command: string;
 }
 
+/** `completed.stats` (PR-14): what the run that just finished cost. */
+export interface TrainingStats {
+  /** Trainable parameters of the model just trained; grows with the vocabulary. */
+  parameters: number;
+  /** Wall-clock seconds of the training loop on the backend. */
+  training_seconds: number;
+  /** Examples actually trained on. */
+  examples: number;
+  epochs: number;
+}
+
 export type TrainingMessage =
   | { type: "log"; message: string }
   | { type: "progress"; progress: number }
   | { type: "metrics"; metrics: EpochMetric }
-  | { type: "completed"; message: string }
+  | { type: "completed"; message: string; stats?: TrainingStats }
   | { type: "failed"; message: string };
 
 /** Any unexpected HTTP status. `body` is the parsed JSON if it parses, else the raw text. */
@@ -114,12 +125,48 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** Narrows a parsed WS payload to a TrainingMessage, or null if it isn't one. */
+function isPositiveInteger(value: unknown): boolean {
+  return Number.isInteger(value) && (value as number) > 0;
+}
+
+/** Whether `value` is a well-formed TrainingStats (extra keys allowed; copy before storing). */
+export function isTrainingStats(value: unknown): value is TrainingStats {
+  return (
+    isObject(value) &&
+    isPositiveInteger(value.parameters) &&
+    typeof value.training_seconds === "number" &&
+    Number.isFinite(value.training_seconds) &&
+    value.training_seconds >= 0 &&
+    isPositiveInteger(value.examples) &&
+    isPositiveInteger(value.epochs)
+  );
+}
+
+/**
+ * Narrows a parsed WS payload to a TrainingMessage, or null if it isn't one.
+ * A `completed` with malformed `stats` is still a valid `completed`, just
+ * without stats: the run finished either way.
+ */
 export function parseTrainingMessage(data: unknown): TrainingMessage | null {
   if (!isObject(data)) return null;
   switch (data.type) {
+    case "completed": {
+      if (typeof data.message !== "string") return null;
+      const s = data.stats;
+      return isTrainingStats(s)
+        ? {
+            type: "completed",
+            message: data.message,
+            stats: {
+              parameters: s.parameters,
+              training_seconds: s.training_seconds,
+              examples: s.examples,
+              epochs: s.epochs,
+            },
+          }
+        : { type: "completed", message: data.message };
+    }
     case "log":
-    case "completed":
     case "failed":
       return typeof data.message === "string" ? (data as TrainingMessage) : null;
     case "progress":

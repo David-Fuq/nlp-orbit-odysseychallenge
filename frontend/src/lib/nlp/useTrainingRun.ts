@@ -77,6 +77,8 @@ export function useTrainingRun({ onCompleted }: { onCompleted?: () => void } = {
         // Only now: a failed run leaves the backend's previous model, whose
         // dataset key is still the stored one.
         setField("trained_dataset_key", corpusKey);
+        // null when the backend sent none, so stats never describe an older model.
+        setField("last_training_stats", msg.stats ?? null);
         setField("model_trained", true);
         finishRun(runId);
         onCompleted?.();

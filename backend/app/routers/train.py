@@ -49,7 +49,7 @@ from app.schemas import TrainingExample as WireExample
 from app.services import registry
 from app.services.corpus import NUMERIC_INTENTS, load_base_corpus
 from app.services.corpus import TrainingExample as CorpusExample
-from app.services.model import TrainedModel, train_model
+from app.services.model import TrainedModel, count_parameters, train_model
 # Aliased: the ``predict`` endpoint below already owns that name.
 from app.services.model import predict as predict_sentence
 from app.ws.progress import manager
@@ -115,7 +115,8 @@ async def _training_run(request: TrainRequest) -> None:
 
     Message order: ``log`` ("Training started"), an optional ``log`` about the
     default corpus, one ``progress`` + ``metrics`` pair per epoch, then
-    ``completed`` -- or ``failed`` at any point. Never raises.
+    ``completed`` (with ``stats``: parameters, training_seconds, examples,
+    epochs) -- or ``failed`` at any point. Never raises.
     """
     job_id = request.job_id
     try:
@@ -163,7 +164,20 @@ async def _training_run(request: TrainRequest) -> None:
         # registry write.
         registry.set_model(job_id, trained)
         await manager.broadcast(
-            job_id, {"type": "completed", "message": "Training complete"}
+            job_id,
+            {
+                "type": "completed",
+                "message": "Training complete",
+                # PR-14, additive: Step 7's receipt. ``examples`` is the corpus
+                # actually trained on, so the empty-corpus fallback reports the
+                # base corpus size.
+                "stats": {
+                    "parameters": count_parameters(trained.model),
+                    "training_seconds": trained.training_seconds,
+                    "examples": len(corpus),
+                    "epochs": request.epochs,
+                },
+            },
         )
         logger.info("Training complete for job %s", job_id)
     except Exception as exc:

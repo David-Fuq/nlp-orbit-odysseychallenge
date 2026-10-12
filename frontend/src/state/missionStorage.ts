@@ -2,7 +2,7 @@
 // sessionStorage blob. Kept out of MissionContext.tsx so it can be unit-tested
 // without React.
 
-import type { EpochMetric, Prediction, TrainingExample } from "@/lib/nlp/api";
+import { isTrainingStats, type EpochMetric, type Prediction, type TrainingExample, type TrainingStats } from "@/lib/nlp/api";
 import { BASE_EXAMPLES } from "@/lib/nlp/baseExamples";
 import {
   DEFAULT_EPOCHS,
@@ -73,6 +73,13 @@ export interface MissionState {
    * run completes; null when unknown. Step 5 compares it with the dataset now.
    */
   trained_dataset_key: string | null;
+  /**
+   * Step 7: `completed.stats` of the run behind the current model; null until
+   * a run reports them (or after a run that didn't).
+   */
+  last_training_stats: TrainingStats | null;
+  /** Step 7: ISO time Step 2 was first opened this session; set once, never overwritten. */
+  labeling_started_at: string | null;
 }
 
 export const DEFAULTS: MissionState = {
@@ -89,6 +96,8 @@ export const DEFAULTS: MissionState = {
   round_history: [],
   final_test: null,
   trained_dataset_key: null,
+  last_training_stats: null,
+  labeling_started_at: null,
 };
 
 const STRING_FIELDS = [
@@ -244,6 +253,20 @@ export function restoreMissionState(
   state.final_test = restoreFinalTest(blob.final_test);
 
   if (typeof blob.trained_dataset_key === "string") state.trained_dataset_key = blob.trained_dataset_key;
+
+  // All or nothing; copied field by field so unknown keys never enter state.
+  const stats = blob.last_training_stats;
+  if (isTrainingStats(stats)) {
+    state.last_training_stats = {
+      parameters: stats.parameters,
+      training_seconds: stats.training_seconds,
+      examples: stats.examples,
+      epochs: stats.epochs,
+    };
+  }
+
+  const started = blob.labeling_started_at;
+  if (typeof started === "string" && !Number.isNaN(Date.parse(started))) state.labeling_started_at = started;
 
   if (isUuid(blob.job_id)) {
     state.job_id = blob.job_id;

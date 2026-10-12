@@ -263,6 +263,68 @@ describe("restoreMissionState", () => {
     }
   });
 
+  it("restores valid last_training_stats, copying only the known fields", () => {
+    const stats = { parameters: 3528, training_seconds: 0.42, examples: 27, epochs: 20 };
+    const { state } = restoreMissionState(
+      { job_id: ID, last_training_stats: { ...stats, extra: "dropped" } },
+      DEFAULTS,
+      newId,
+    );
+    expect(state.last_training_stats).toEqual(stats);
+    expect(state.last_training_stats).not.toHaveProperty("extra");
+  });
+
+  it("drops malformed last_training_stats", () => {
+    const good = { parameters: 3528, training_seconds: 0.42, examples: 27, epochs: 20 };
+    const bads = [
+      "3528",
+      [],
+      { ...good, parameters: "3528" },
+      { ...good, parameters: 0 },
+      { ...good, parameters: 12.5 },
+      { ...good, training_seconds: -1 },
+      { ...good, training_seconds: Number.NaN },
+      { ...good, examples: -3 },
+      { parameters: 3528, training_seconds: 0.42, examples: 27 },
+    ];
+    for (const last_training_stats of bads) {
+      const { state } = restoreMissionState({ job_id: ID, last_training_stats }, DEFAULTS, newId);
+      expect(state.last_training_stats).toBeNull();
+    }
+  });
+
+  it("restores a valid labeling_started_at and drops anything else", () => {
+    const at = "2026-10-12T09:15:00.000Z";
+    expect(restoreMissionState({ job_id: ID, labeling_started_at: at }, DEFAULTS, newId).state.labeling_started_at).toBe(
+      at,
+    );
+    for (const labeling_started_at of ["not a date", 1760260500000, {}, null]) {
+      const { state } = restoreMissionState({ job_id: ID, labeling_started_at }, DEFAULTS, newId);
+      expect(state.labeling_started_at).toBeNull();
+    }
+  });
+
+  it("restores a pre-PR-14 blob with no stats and no labeling time", () => {
+    const blob = {
+      job_id: ID,
+      labeled_examples: [...BASE_EXAMPLES],
+      model_trained: true,
+      final_test: validFinalTest(),
+      trained_dataset_key: "15:0a1b2c3d",
+    };
+    const { state, generated } = restoreMissionState(blob, DEFAULTS, newId);
+    expect(generated).toBe(false);
+    expect(state.model_trained).toBe(true);
+    expect(state.final_test).not.toBeNull();
+    expect(state.last_training_stats).toBeNull();
+    expect(state.labeling_started_at).toBeNull();
+  });
+
+  it("defaults both PR-14 fields to null, so Start over clears them", () => {
+    expect(DEFAULTS.last_training_stats).toBeNull();
+    expect(DEFAULTS.labeling_started_at).toBeNull();
+  });
+
   it("drops a pre-PR-10 blob's old-log Step 6 answers", () => {
     const blob = { job_id: ID, student_new_commands: "STRAIGHT 60", llm_commands_new: "STRAIGHT 60\nTURN 180" };
     const { state } = restoreMissionState(blob, DEFAULTS, newId);

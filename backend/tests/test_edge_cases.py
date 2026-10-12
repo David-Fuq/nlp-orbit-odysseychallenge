@@ -101,7 +101,9 @@ def test_second_train_while_training_is_ignored(monkeypatch: pytest.MonkeyPatch)
 
         assert rest[0] == {"type": "progress", "progress": pytest.approx(2 / 2)}
         assert rest[1] == {"type": "metrics", "metrics": _metrics(2)}
-        assert rest[2] == {"type": "completed", "message": "Training complete"}
+        assert rest[2]["type"] == "completed"
+        assert rest[2]["message"] == "Training complete"
+        assert set(rest[2]) == {"type", "message", "stats"}
         assert trainer.calls == 1
         assert registry.get_model(job_id) is trainer.returned
         assert job_id not in train_router._active_jobs

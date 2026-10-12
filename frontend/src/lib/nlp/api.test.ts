@@ -5,6 +5,7 @@ import {
   NotTrainedError,
   connectTrainingSocket,
   getModelStatus,
+  parseTrainingMessage,
   predict,
   startTraining,
   type TrainingExample,
@@ -274,5 +275,34 @@ describe("connectTrainingSocket", () => {
     disconnect();
     ws.fireClose();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("parseTrainingMessage: completed.stats (PR-14)", () => {
+  const stats = { parameters: 3528, training_seconds: 0.42, examples: 27, epochs: 20 };
+
+  it("keeps valid stats on completed, copying only the known fields", () => {
+    const msg = parseTrainingMessage({
+      type: "completed",
+      message: "Training complete",
+      stats: { ...stats, extra: 1 },
+    });
+    expect(msg).toEqual({ type: "completed", message: "Training complete", stats });
+  });
+
+  it("keeps a completed without stats, from an older backend", () => {
+    expect(parseTrainingMessage({ type: "completed", message: "Training complete" })).toEqual({
+      type: "completed",
+      message: "Training complete",
+    });
+  });
+
+  it("drops malformed stats but keeps the completed message", () => {
+    for (const bad of [null, "x", { ...stats, parameters: "3528" }, { ...stats, training_seconds: -0.1 }, { ...stats, epochs: 0 }]) {
+      expect(parseTrainingMessage({ type: "completed", message: "Training complete", stats: bad })).toEqual({
+        type: "completed",
+        message: "Training complete",
+      });
+    }
   });
 });

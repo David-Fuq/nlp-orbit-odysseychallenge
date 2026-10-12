@@ -118,7 +118,9 @@ def test_train_then_predict_near_training_example() -> None:
         messages = _train(client, job_id, _base_corpus_wire())
         assert messages[0] == {"type": "log", "message": "Training started"}
         _assert_epoch_pairs(messages[1:-1], EPOCHS)
-        assert messages[-1] == {"type": "completed", "message": "Training complete"}
+        assert messages[-1]["type"] == "completed"
+        assert messages[-1]["message"] == "Training complete"
+        assert set(messages[-1]) == {"type", "message", "stats"}
 
         assert _trained(client, job_id) is True
         assert isinstance(registry.get_model(job_id), TrainedModel)
@@ -353,3 +355,14 @@ def test_to_corpus_examples_converts_valid_examples() -> None:
 def test_to_corpus_examples_rejects_amount_mismatch(example: WireExample, fragment: str) -> None:
     with pytest.raises(ValueError, match=fragment):
         train_router._to_corpus_examples([example])
+
+
+def test_stats_examples_counts_base_corpus_fallback() -> None:
+    """With no corpus, ``stats.examples`` is the base corpus actually trained on."""
+    job_id = str(uuid.uuid4())
+    with TestClient(app) as client:
+        messages = _train(client, job_id, [])
+
+    assert messages[-1]["type"] == "completed"
+    assert messages[-1]["stats"]["examples"] == len(load_base_corpus())
+    assert messages[-1]["stats"]["epochs"] == EPOCHS

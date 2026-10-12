@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import registry
-from app.services.model import TrainedModel
+from app.services.model import TrainedModel, count_parameters
 
 CORPUS = [
     {"sentence": "roll forward 40 centimeters", "intent": "STRAIGHT", "amount_cm": 40.0},
@@ -84,7 +84,9 @@ def test_ws_receives_full_training_sequence_in_order() -> None:
                 }
 
             final = ws.receive_json()
-            assert final == {"type": "completed", "message": "Training complete"}
+            assert final["type"] == "completed"
+            assert final["message"] == "Training complete"
+            assert set(final) == {"type", "message", "stats"}
 
         # The registry is written before ``completed`` is broadcast, so the
         # model is queryable as soon as the client sees that message.
@@ -180,3 +182,31 @@ def test_messages_are_scoped_to_their_job_id() -> None:
 
         assert registry.has_model(trained_job) is True
         assert registry.has_model(other_job) is False
+
+
+def test_completed_carries_training_stats() -> None:
+    """PR-14: ``completed`` carries ``stats`` describing the model just trained."""
+    job_id = str(uuid.uuid4())
+
+    with TestClient(app) as client:
+        with client.websocket_connect(f"/api/ws/training/{job_id}") as ws:
+            client.post(
+                "/api/train",
+                json={
+                    "job_id": job_id,
+                    "corpus": CORPUS,
+                    "epochs": EPOCHS,
+                    "learning_rate": 0.05,
+                },
+            )
+            while (message := ws.receive_json())["type"] != "completed":
+                pass
+
+    stats = message["stats"]
+    assert set(stats) == {"parameters", "training_seconds", "examples", "epochs"}
+    assert stats["parameters"] > 0
+    assert stats["parameters"] == count_parameters(registry.get_model(job_id).model)
+    assert isinstance(stats["training_seconds"], float)
+    assert stats["training_seconds"] > 0
+    assert stats["examples"] == len(CORPUS)
+    assert stats["epochs"] == EPOCHS
